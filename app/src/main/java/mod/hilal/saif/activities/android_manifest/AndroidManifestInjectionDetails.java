@@ -153,6 +153,9 @@ public class AndroidManifestInjectionDetails extends BaseAppCompatActivity {
             attributeBinding.inputRes.setText("android");
             attributeBinding.inputAttr.setText("name");
             attributeBinding.inputLayoutValue.setHint("permission");
+
+attributeBinding.inputRes.setEnabled(false);
+            attributeBinding.inputAttr.setEnabled(false);
         }
         dialog.setPositiveButton(R.string.common_word_save, (dialog1, which) -> {
             String fstr = Helper.getText(attributeBinding.inputRes).trim() + ":" + Helper.getText(attributeBinding.inputAttr).trim() + "=\"" + Helper.getText(attributeBinding.inputValue).trim() + "\"";
