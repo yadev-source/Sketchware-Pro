@@ -33,7 +33,7 @@ To build the app, you must use Gradle. It's highly recommended to use Android St
 ## Contributing
 
 If you'd like to contribute to Sketchware Pro, follow these steps:
-
+ 
 1. Fork this repository.
 2. Make changes in your forked repository.
 3. Test out those changes.
