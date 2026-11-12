@@ -51,6 +51,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           lfs: true
+          fetch-depth: 2   # perlu HEAD~1 untuk git diff filter kelas
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -109,6 +110,92 @@ jobs:
           echo "=== JAR files ==="
           ls -la jar_output/ 2>/dev/null || echo "(kosong)"
 
+      # ───────────── TAMBAHAN 2b: Filter hanya kelas yang diedit ─────────────
+      - name: Filter classes.jar to only changed classes
+        run: |
+          set -uo pipefail
+          mkdir -p jar_changed
+
+          # 1) Daftar source yang berubah di commit terakhir
+          git diff --name-only HEAD~1 HEAD -- '*.java' '*.kt' > /tmp/changed_src.txt 2>/dev/null || true
+          echo "=== Source berubah ==="
+          cat /tmp/changed_src.txt || true
+
+          if [ ! -s /tmp/changed_src.txt ]; then
+            echo "ℹ️ Tidak ada source berubah — salin classes.jar apa adanya."
+            cp jar_output/*.jar jar_changed/ 2>/dev/null || true
+            ls -la jar_changed/ || true
+            exit 0
+          fi
+
+          # 2) Path source → nama kelas (tanpa .class)
+          > /tmp/class_patterns.txt
+          while IFS= read -r src; do
+            [[ -z "$src" ]] && continue
+            [[ "$src" =~ /src/(main|debug|release)/(java|kotlin)/ ]] || continue
+            # Ambil bagian setelah .../java/ atau .../kotlin/
+            rel=$(echo "$src" | sed -E 's#^.*/src/(main|debug|release)/(java|kotlin)/##')
+            cls="${rel%.java}"; cls="${cls%.kt}"
+            [ -n "$cls" ] && echo "$cls" >> /tmp/class_patterns.txt
+          done < /tmp/changed_src.txt
+
+          echo "=== Class patterns ==="
+          cat /tmp/class_patterns.txt
+
+          if [ ! -s /tmp/class_patterns.txt ]; then
+            echo "ℹ️ Source berubah tidak berada di src/main — salin semua."
+            cp jar_output/*.jar jar_changed/ 2>/dev/null || true
+            ls -la jar_changed/ || true
+            exit 0
+          fi
+
+          # 3) Filter tiap classes.jar
+          shopt -s nullglob
+          for jar in jar_output/*.jar; do
+            jar_name=$(basename "$jar" .jar)
+            out_name="${jar_name}-changed.jar"
+            tmp=$(mktemp -d)
+            unzip -q "$jar" -d "$tmp"
+
+            staging="$(mktemp -d)"
+            matched=0
+
+            while IFS= read -r -d '' cf; do
+              cpath="${cf#$tmp/}"
+              cname="${cpath%.class}"
+              keep=false
+              while IFS= read -r p; do
+                case "$cname" in
+                  "$p"|"$p"\$*|"${p}Kt"|"${p}Kt"\$*) keep=true; break ;;
+                esac
+              done < /tmp/class_patterns.txt
+
+              if [ "$keep" = true ]; then
+                mkdir -p "$staging/$(dirname "$cpath")"
+                cp "$cf" "$staging/$cpath"
+                matched=$((matched+1))
+              fi
+            done < <(find "$tmp" -name '*.class' -print0)
+
+            if [ "$matched" -gt 0 ]; then
+              ( cd "$staging" && jar cf "$OLDPWD/jar_changed/$out_name" . )
+              echo "✅ $out_name dibuat ($matched kelas cocok)"
+            else
+              echo "⚠️ Tidak ada kelas cocok untuk $jar_name — skip."
+            fi
+
+            rm -rf "$tmp" "$staging"
+          done
+
+          # Fallback: kalau filter kosong, salin full jar
+          if [ -z "$(ls -A jar_changed/*.jar 2>/dev/null)" ]; then
+            echo "⚠️ Hasil filter kosong — fallback ke classes.jar penuh."
+            cp jar_output/*.jar jar_changed/ 2>/dev/null || true
+          fi
+
+          echo "=== Hasil ==="
+          ls -la jar_changed/ || true
+
       - name: Upload Release APK
         uses: actions/upload-artifact@v7
         with:
@@ -123,11 +210,18 @@ jobs:
           path: dex_output/*.dex
           if-no-files-found: error
 
-      - name: Upload classes.jar
+      - name: Upload classes.jar (full, pre-R8)
         uses: actions/upload-artifact@v7
         with:
           name: classes-jar-${{ steps.set_sha.outputs.short_sha }}
           path: jar_output/*.jar
+          if-no-files-found: warn
+
+      - name: Upload classes.jar (changed only)
+        uses: actions/upload-artifact@v7
+        with:
+          name: classes-jar-changed-${{ steps.set_sha.outputs.short_sha }}
+          path: jar_changed/*.jar
           if-no-files-found: warn
 
   # ─────────────────────────────────────────────────────────────
