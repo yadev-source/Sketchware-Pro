@@ -266,7 +266,6 @@ public class ManageJavaActivity extends BaseAppCompatActivity {
     private void showImportDialog() {
     FilePickerOptions options = new FilePickerOptions();
     options.setMultipleSelection(true);
-    options.setExtensions(new String[]{"java", "kt"});
     options.setTitle("Select Java/Kotlin file(s)");
 
     FilePickerCallback callback = new FilePickerCallback() {
@@ -274,21 +273,13 @@ public class ManageJavaActivity extends BaseAppCompatActivity {
         public void onFilesSelected(@NotNull List<? extends File> files) {
             ExecutorService executor = Executors.newSingleThreadExecutor();
             executor.execute(() -> {
-                int imported = 0;
-                int skipped  = 0;
+                int imported = 0, skipped = 0;
 
                 for (File file : files) {
-                    // FIX 1: lewati direktori
-                    if (!file.isFile()) {
-                        skipped++;
-                        continue;
-                    }
-
-                    // FIX 2: validasi ekstensi (defensive, jaga-jaga kalau picker bug)
+                    if (!file.isFile()) { skipped++; continue; }
                     String fileName = file.getName();
                     if (!fileName.endsWith(".java") && !fileName.endsWith(".kt")) {
-                        skipped++;
-                        continue;
+                        skipped++; continue;   // filter ekstensi tetap jalan di sini
                     }
 
                     String fileContent = FileUtil.readFile(file.getAbsolutePath());
@@ -303,29 +294,17 @@ public class ManageJavaActivity extends BaseAppCompatActivity {
                     }
 
                     File target = new File(current_path, fileName);
-                    // FIX 3: jangan timpa file yang sudah ada
-                    if (target.exists()) {
-                        skipped++;
-                        continue;
-                    }
-
+                    if (target.exists()) { skipped++; continue; }
                     FileUtil.writeFile(target.getAbsolutePath(), fileContent);
                     imported++;
                 }
 
-                final int importedCount = imported;
-                final int skippedCount  = skipped;
-
+                final int imp = imported, skp = skipped;
                 runOnUiThread(() -> {
-                    if (importedCount > 0) {
-                        SketchwareUtil.toast("Imported " + importedCount + " file(s)");
-                    }
-                    if (skippedCount > 0) {
-                        SketchwareUtil.toastError("Skipped " + skippedCount + " item(s)");
-                    }
+                    if (imp > 0) SketchwareUtil.toast("Imported " + imp + " file(s)");
+                    if (skp > 0) SketchwareUtil.toastError("Skipped " + skp + " item(s)");
                     refresh();
                 });
-
                 executor.shutdown();
             });
         }
