@@ -264,33 +264,75 @@ public class ManageJavaActivity extends BaseAppCompatActivity {
     }
 
     private void showImportDialog() {
-        FilePickerOptions options = new FilePickerOptions();
-        options.setMultipleSelection(true);
-        options.setExtensions(new String[]{"java", "kt"});
-        options.setTitle("Select Java/Kotlin file(s)");
+    FilePickerOptions options = new FilePickerOptions();
+    options.setMultipleSelection(true);
+    options.setExtensions(new String[]{"java", "kt"});
+    options.setTitle("Select Java/Kotlin file(s)");
 
-        FilePickerCallback callback = new FilePickerCallback() {
-            @Override
-            public void onFilesSelected(@NotNull List<? extends File> files) {
-                ExecutorService executor = Executors.newSingleThreadExecutor();
-                executor.execute(() -> {
-                    for (File file : files) {
-                        String fileContent = FileUtil.readFile(file.getAbsolutePath());
+    FilePickerCallback callback = new FilePickerCallback() {
+        @Override
+        public void onFilesSelected(@NotNull List<? extends File> files) {
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            executor.execute(() -> {
+                int imported = 0;
+                int skipped  = 0;
 
-                        if (fileContent.contains("package ")) {
-                            fileContent = fileContent.replaceFirst(PACKAGE_DECL_REGEX, "package " + getCurrentPkgName() + (file.getName().endsWith(".java") ? ";" : "") + "\n");
-                        }
-
-                        FileUtil.writeFile(new File(current_path, file.getName()).getAbsolutePath(), fileContent);
+                for (File file : files) {
+                    // FIX 1: lewati direktori
+                    if (!file.isFile()) {
+                        skipped++;
+                        continue;
                     }
-                    runOnUiThread(ManageJavaActivity.this::refresh);
-                    executor.shutdown();
-                });
-            }
-        };
 
-        new FilePickerDialogFragment(options, callback).show(getSupportFragmentManager(), "filePicker");
-    }
+                    // FIX 2: validasi ekstensi (defensive, jaga-jaga kalau picker bug)
+                    String fileName = file.getName();
+                    if (!fileName.endsWith(".java") && !fileName.endsWith(".kt")) {
+                        skipped++;
+                        continue;
+                    }
+
+                    String fileContent = FileUtil.readFile(file.getAbsolutePath());
+                    if (fileContent == null) fileContent = "";
+
+                    if (fileContent.contains("package ")) {
+                        fileContent = fileContent.replaceFirst(
+                                PACKAGE_DECL_REGEX,
+                                "package " + getCurrentPkgName()
+                                        + (fileName.endsWith(".java") ? ";" : "") + "\n"
+                        );
+                    }
+
+                    File target = new File(current_path, fileName);
+                    // FIX 3: jangan timpa file yang sudah ada
+                    if (target.exists()) {
+                        skipped++;
+                        continue;
+                    }
+
+                    FileUtil.writeFile(target.getAbsolutePath(), fileContent);
+                    imported++;
+                }
+
+                final int importedCount = imported;
+                final int skippedCount  = skipped;
+
+                runOnUiThread(() -> {
+                    if (importedCount > 0) {
+                        SketchwareUtil.toast("Imported " + importedCount + " file(s)");
+                    }
+                    if (skippedCount > 0) {
+                        SketchwareUtil.toastError("Skipped " + skippedCount + " item(s)");
+                    }
+                    refresh();
+                });
+
+                executor.shutdown();
+            });
+        }
+    };
+
+    new FilePickerDialogFragment(options, callback).show(getSupportFragmentManager(), "filePicker");
+}
 
     private void showRenameDialog(int position) {
         DialogInputLayoutBinding dialogBinding = DialogInputLayoutBinding.inflate(getLayoutInflater());
