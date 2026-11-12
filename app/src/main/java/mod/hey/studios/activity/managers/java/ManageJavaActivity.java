@@ -2,10 +2,8 @@ package mod.hey.studios.activity.managers.java;
 
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
-import android.provider.OpenableColumns;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -23,17 +21,18 @@ import com.besome.sketch.lib.base.BaseAppCompatActivity;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.gson.Gson;
 
-import java.io.ByteArrayOutputStream;
+import org.jetbrains.annotations.NotNull;
+
 import java.io.File;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import dev.pranav.filepicker.FilePickerCallback;
+import dev.pranav.filepicker.FilePickerDialogFragment;
+import dev.pranav.filepicker.FilePickerOptions;
 import mod.hey.studios.code.SrcCodeEditor;
 import mod.hey.studios.util.Helper;
 import pro.sketchware.R;
@@ -50,9 +49,6 @@ public class ManageJavaActivity extends BaseAppCompatActivity {
 
     // works for both Java & Kotlin files
     private static final String PACKAGE_DECL_REGEX = "package (.*?);?\\n";
-
-    // Request code untuk SAF import
-    private static final int REQUEST_IMPORT_FILES = 4001;
 
     private static final String ACTIVITY_TEMPLATE = """
             package %s;
@@ -82,6 +78,7 @@ public class ManageJavaActivity extends BaseAppCompatActivity {
             
             import android.app.Activity
             import android.os.Bundle
+import pro.sketchware.utility.TranslationFunction;
             
             class %s : Activity() {
             
@@ -135,7 +132,7 @@ public class ManageJavaActivity extends BaseAppCompatActivity {
 
     private void setupUI() {
         binding.topAppBar.setNavigationOnClickListener(Helper.getBackPressedClickListener(this));
-        binding.topAppBar.setTitle(R.string.text_title_menu_java);
+        binding.topAppBar.setTitle("Java/Kotlin Manager");
         binding.showOptionsButton.setOnClickListener(view -> hideShowOptionsButton(false));
         binding.closeButton.setOnClickListener(view -> hideShowOptionsButton(true));
         binding.createNewButton.setOnClickListener(v -> {
@@ -146,6 +143,7 @@ public class ManageJavaActivity extends BaseAppCompatActivity {
             showImportDialog();
             hideShowOptionsButton(true);
         });
+
     }
 
     private void hideShowOptionsButton(boolean isHide) {
@@ -182,7 +180,7 @@ public class ManageJavaActivity extends BaseAppCompatActivity {
 
         var dialog = new MaterialAlertDialogBuilder(this)
                 .setView(dialogBinding.getRoot())
-                .setTitle(R.string.assets_manager_add_new)
+                .setTitle("Create new")
                 .setMessage("File extension will be added automatically based on the file type you select")
                 .setNegativeButton("Cancel", (dialogInterface, i) -> dialogInterface.dismiss())
                 .setPositiveButton("Create", null)
@@ -194,17 +192,16 @@ public class ManageJavaActivity extends BaseAppCompatActivity {
 
             Button positiveButton = ((androidx.appcompat.app.AlertDialog) dialogInterface).getButton(DialogInterface.BUTTON_POSITIVE);
             positiveButton.setOnClickListener(view -> {
-                String name = Helper.getText(inputText);
-                if (name.isEmpty()) {
+                if (Helper.getText(inputText).isEmpty()) {
                     SketchwareUtil.toastError("Invalid file name");
                     return;
                 }
 
+                String name = Helper.getText(inputText);
                 String packageName = getCurrentPkgName();
+
                 String extension;
                 String newFileContent;
-                boolean isFolder = false;
-
                 int checkedChipId = dialogBinding.chipGroupTypes.getCheckedChipId();
                 if (checkedChipId == R.id.chip_java_class) {
                     newFileContent = String.format(CLASS_TEMPLATE, packageName, name);
@@ -219,32 +216,20 @@ public class ManageJavaActivity extends BaseAppCompatActivity {
                     newFileContent = String.format(KT_ACTIVITY_TEMPLATE, packageName, name);
                     extension = ".kt";
                 } else if (checkedChipId == R.id.chip_folder) {
-                    isFolder = true;
-                    extension = "";
-                    newFileContent = "";
+                    FileUtil.makeDir(new File(current_path, name).getAbsolutePath());
+                    refresh();
+                    SketchwareUtil.toast("Folder was created successfully");
+                    dialog.dismiss();
+                    return;
                 } else {
                     SketchwareUtil.toast("Select a file type");
                     return;
                 }
-                String targetPath = new File(current_path, name + extension).getAbsolutePath();
-                if (FileUtil.isExistFile(targetPath)) {
-                    SketchwareUtil.toastError((isFolder ? "Folder" : "File") + " already exists");
-                    return;
-                }
 
-                if (isFolder) {
-                    FileUtil.makeDir(targetPath);
-                } else {
-                    FileUtil.writeFile(targetPath, newFileContent);
-                }
-
-                if (FileUtil.isExistFile(targetPath)) {
-                    refresh();
-                    SketchwareUtil.toast((isFolder ? "Folder" : "File") + " was created successfully");
-                    dialog.dismiss();
-                } else {
-                    SketchwareUtil.toastError("Failed to create " + (isFolder ? "folder" : "file"));
-                }
+                FileUtil.writeFile(new File(current_path, name + extension).getAbsolutePath(), newFileContent);
+                refresh();
+                SketchwareUtil.toast("File was created successfully");
+                dialog.dismiss();
             });
 
             dialog.show();
@@ -262,128 +247,30 @@ public class ManageJavaActivity extends BaseAppCompatActivity {
         dialog.show();
     }
 
-    // ────────────────────────────────────────────────────────────
-    // IMPORT via Storage Access Framework (SAF)
-    // ────────────────────────────────────────────────────────────
     private void showImportDialog() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
-        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        try {
-            startActivityForResult(intent, REQUEST_IMPORT_FILES);
-        } catch (android.content.ActivityNotFoundException e) {
-            SketchwareUtil.toastError("Tidak ada file picker di perangkat ini");
-        }
-    }
+        FilePickerOptions options = new FilePickerOptions();
+        options.setMultipleSelection(true);
+        options.setExtensions(new String[]{"java", "kt"});
+        options.setTitle("Select Java/Kotlin file(s)");
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_IMPORT_FILES || resultCode != RESULT_OK || data == null) return;
+        FilePickerCallback callback = new FilePickerCallback() {
+            @Override
+            public void onFilesSelected(@NotNull List<? extends File> files) {
+                for (File file : files) {
+                    String fileContent = FileUtil.readFile(file.getAbsolutePath());
 
-        List<Uri> uris = new ArrayList<>();
-        if (data.getClipData() != null) {
-            int count = data.getClipData().getItemCount();
-            for (int i = 0; i < count; i++) {
-                uris.add(data.getClipData().getItemAt(i).getUri());
-            }
-        } else if (data.getData() != null) {
-            uris.add(data.getData());
-        }
-        if (uris.isEmpty()) return;
-
-        // Simpan izin baca agar tetap berlaku setelah activity selesai
-        final int takeFlags = data.getFlags()
-                & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-        for (Uri u : uris) {
-            try {
-                getContentResolver().takePersistableUriPermission(u, takeFlags);
-            } catch (SecurityException ignored) {
-                // Sebagian provider tidak mendukung persistable permission — abaikan
-            }
-        }
-
-        importUris(uris);
-    }
-
-    private void importUris(List<Uri> uris) {
-        ExecutorService executor = Executors.newSingleThreadExecutor();
-        executor.execute(() -> {
-            int imported = 0, skipped = 0;
-
-            for (Uri uri : uris) {
-                String displayName = queryDisplayName(uri);
-                if (displayName == null) {
-                    skipped++;
-                    continue;
-                }
-                if (!displayName.endsWith(".java") && !displayName.endsWith(".kt")) {
-                    skipped++;
-                    continue;
-                }
-
-                String content;
-                try (InputStream is = getContentResolver().openInputStream(uri)) {
-                    if (is == null) {
-                        skipped++;
-                        continue;
+                    if (fileContent.contains("package ")) {
+                        fileContent = fileContent.replaceFirst(PACKAGE_DECL_REGEX, "package " + getCurrentPkgName() + (file.getName().endsWith(".java") ? ";" : "") + "\n");
                     }
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    byte[] buf = new byte[8192];
-                    int len;
-                    while ((len = is.read(buf)) > 0) {
-                        baos.write(buf, 0, len);
-                    }
-                    content = baos.toString("UTF-8");
-                } catch (Exception e) {
-                    skipped++;
-                    continue;
-                }
 
-                if (content.contains("package ")) {
-                    content = content.replaceFirst(
-                            PACKAGE_DECL_REGEX,
-                            "package " + getCurrentPkgName()
-                                    + (displayName.endsWith(".java") ? ";" : "") + "\n"
-                    );
+                    FileUtil.writeFile(new File(current_path, file.getName()).getAbsolutePath(), fileContent);
+                    refresh();
                 }
-
-                File target = new File(current_path, displayName);
-                if (target.exists()) {
-                    skipped++;
-                    continue;
-                }
-                FileUtil.writeFile(target.getAbsolutePath(), content);
-                imported++;
             }
+        };
 
-            final int imp = imported, skp = skipped;
-            runOnUiThread(() -> {
-                if (imp > 0) SketchwareUtil.toast("Imported " + imp + " file(s)");
-                if (skp > 0) SketchwareUtil.toastError("Skipped " + skp + " item(s)");
-                refresh();
-            });
-            executor.shutdown();
-        });
+        new FilePickerDialogFragment(options, callback).show(getSupportFragmentManager(), "filePicker");
     }
-
-    private String queryDisplayName(Uri uri) {
-        try (Cursor c = getContentResolver().query(
-                uri, new String[]{OpenableColumns.DISPLAY_NAME},
-                null, null, null)) {
-            if (c != null && c.moveToFirst()) {
-                return c.getString(0);
-            }
-        } catch (Exception ignored) {
-        }
-        String path = uri.getLastPathSegment();
-        return path != null ? path.substring(path.lastIndexOf('/') + 1) : null;
-    }
-
-    // ────────────────────────────────────────────────────────────
 
     private void showRenameDialog(int position) {
         DialogInputLayoutBinding dialogBinding = DialogInputLayoutBinding.inflate(getLayoutInflater());
