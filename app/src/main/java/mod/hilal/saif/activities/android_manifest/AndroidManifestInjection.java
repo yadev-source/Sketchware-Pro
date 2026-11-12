@@ -7,14 +7,18 @@ import static pro.sketchware.utility.GsonUtils.getGson;
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.os.Bundle;
+import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
+import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.widget.SwitchCompat;
 import androidx.appcompat.widget.Toolbar;
+import androidx.constraintlayout.widget.ConstraintLayout;
 
 import com.besome.sketch.editor.manage.library.LibraryCategoryView;
 import com.besome.sketch.editor.manage.library.LibraryItemView;
@@ -34,7 +38,6 @@ import mod.hey.studios.code.SrcCodeEditor;
 import mod.hey.studios.util.Helper;
 import mod.hilal.saif.android_manifest.AndroidManifestInjector;
 import mod.remaker.view.CustomAttributeView;
-import pro.sketchware.R;
 import pro.sketchware.activities.editor.view.CodeViewerActivity;
 import pro.sketchware.databinding.AndroidManifestInjectionBinding;
 import pro.sketchware.utility.FileUtil;
@@ -44,9 +47,11 @@ import pro.sketchware.utility.SketchwareUtil;
 public class AndroidManifestInjection extends BaseAppCompatActivity {
 
     private final ArrayList<HashMap<String, Object>> activitiesListMap = new ArrayList<>();
+    private final List<LibraryItemView> lockableItems = new ArrayList<>();
     private AndroidManifestInjectionBinding binding;
     private String sc_id;
     private String currentActivityName;
+    private LibraryItemView editManifestItem;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -98,39 +103,136 @@ public class AndroidManifestInjection extends BaseAppCompatActivity {
 
     private void setupOptions() {
         List<LibraryCategoryView> options = new ArrayList<>();
+        lockableItems.clear();
 
         LibraryCategoryView basicCategoryView = new LibraryCategoryView(this);
         basicCategoryView.setTitle(null);
         options.add(basicCategoryView);
 
-        basicCategoryView.addLibraryItem(createOption("Application", "Default properties for the app", R.drawable.ic_mtrl_settings_applications, v -> {
+        LibraryItemView applicationItem = createOption("Application", "Default properties for the app", R.drawable.ic_mtrl_settings_applications, v -> {
             Intent intent = new Intent();
             intent.setClass(getApplicationContext(), AndroidManifestInjectionDetails.class);
             intent.putExtra("sc_id", sc_id);
             intent.putExtra("file_name", currentActivityName);
             intent.putExtra("type", "application");
             startActivity(intent);
-        }), true);
-        basicCategoryView.addLibraryItem(createOption("Permissions", "Add custom Permissions to the app", R.drawable.ic_mtrl_shield_check, v -> {
+        });
+        basicCategoryView.addLibraryItem(applicationItem, true);
+        lockableItems.add(applicationItem);
+
+        LibraryItemView permissionsItem = createOption("Permissions", "Add custom Permissions to the app", R.drawable.ic_mtrl_shield_check, v -> {
             Intent intent = new Intent();
             intent.setClass(getApplicationContext(), AndroidManifestInjectionDetails.class);
             intent.putExtra("sc_id", sc_id);
             intent.putExtra("file_name", currentActivityName);
             intent.putExtra("type", "permission");
             startActivity(intent);
-        }), true);
-        basicCategoryView.addLibraryItem(createOption("Launcher Activity", "Change the default Launcher Activity", R.drawable.ic_mtrl_login, v -> showLauncherActDialog(AndroidManifestInjector.getLauncherActivity(sc_id))), true);
-        basicCategoryView.addLibraryItem(createOption("All Activities", "Add attributes for all Activities", R.drawable.ic_mtrl_frame_source, v -> {
+        });
+        basicCategoryView.addLibraryItem(permissionsItem, true);
+        lockableItems.add(permissionsItem);
+
+        LibraryItemView launcherItem = createOption("Launcher Activity", "Change the default Launcher Activity", R.drawable.ic_mtrl_login, v -> showLauncherActDialog(AndroidManifestInjector.getLauncherActivity(sc_id)));
+        basicCategoryView.addLibraryItem(launcherItem, true);
+        lockableItems.add(launcherItem);
+
+        LibraryItemView allActivitiesItem = createOption("All Activities", "Add attributes for all Activities", R.drawable.ic_mtrl_frame_source, v -> {
             Intent intent = new Intent();
             intent.setClass(getApplicationContext(), AndroidManifestInjectionDetails.class);
             intent.putExtra("sc_id", sc_id);
             intent.putExtra("file_name", currentActivityName);
             intent.putExtra("type", "all");
             startActivity(intent);
-        }), true);
-        basicCategoryView.addLibraryItem(createOption("App Components", "Add extra components", R.drawable.ic_mtrl_component, v -> showAppComponentDialog()), false);
+        });
+        basicCategoryView.addLibraryItem(allActivitiesItem, true);
+        lockableItems.add(allActivitiesItem);
+
+        LibraryItemView appComponentsItem = createOption("App Components", "Add extra components", R.drawable.ic_mtrl_component, v -> showAppComponentDialog());
+        basicCategoryView.addLibraryItem(appComponentsItem, false);
+        lockableItems.add(appComponentsItem);
+
+        // ───── NEW: Edit Manifest dengan toggle ─────
+        editManifestItem = createOption(
+                "Edit Manifest",
+                "Enable the toggle to lock all options above and edit AndroidManifest.xml directly. Disable to unlock them.",
+                R.drawable.ic_mtrl_code,
+                v -> openManifestEditor()
+        );
+
+        SwitchCompat toggle = new SwitchCompat(this);
+        toggle.setChecked(false);
+        toggle.setOnCheckedChangeListener((btn, checked) -> {
+            for (LibraryItemView item : lockableItems) {
+                item.setEnabled(!checked);
+                item.setAlpha(checked ? 0.5f : 1.0f);
+            }
+            editManifestItem.setEnabled(checked);
+            editManifestItem.setAlpha(checked ? 1.0f : 0.5f);
+        });
+
+        addTrailingView(editManifestItem, toggle);
+
+        // Default state: Edit Manifest inactive, others active
+        editManifestItem.setEnabled(false);
+        editManifestItem.setAlpha(0.5f);
+
+        basicCategoryView.addLibraryItem(editManifestItem, true);
 
         options.forEach(binding.cards::addView);
+    }
+
+    /**
+     * Menempatkan view tambahan (mis. Switch) di ujung kanan LibraryItemView.
+     * Mendukung ConstraintLayout dan LinearLayout.
+     */
+    private void addTrailingView(ViewGroup parent, View child) {
+        int marginPx = (int) (16 * parent.getResources().getDisplayMetrics().density);
+
+        if (parent instanceof ConstraintLayout) {
+            ConstraintLayout.LayoutParams lp = new ConstraintLayout.LayoutParams(
+                    ConstraintLayout.LayoutParams.WRAP_CONTENT,
+                    ConstraintLayout.LayoutParams.WRAP_CONTENT
+            );
+            lp.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID;
+            lp.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
+            lp.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID;
+            lp.setMarginEnd(marginPx);
+            parent.addView(child, lp);
+        } else if (parent instanceof LinearLayout) {
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            lp.gravity = Gravity.CENTER_VERTICAL;
+            lp.setMarginEnd(marginPx);
+            parent.addView(child, lp);
+        } else {
+            parent.addView(child);
+        }
+    }
+
+    private void openManifestEditor() {
+        k();
+        new Thread(() -> {
+            String source = new yq(getApplicationContext(), sc_id).getFileSrc(
+                    "AndroidManifest.xml", jC.b(sc_id), jC.a(sc_id), jC.c(sc_id));
+
+            runOnUiThread(() -> {
+                if (isFinishing()) return;
+                h();
+
+                String dir = FileUtil.getExternalStorageDir()
+                        + "/.sketchware/data/" + sc_id + "/Injection/androidmanifest/";
+                FileUtil.makeDir(dir);
+                String manifestPath = dir + "AndroidManifest.xml";
+                FileUtil.writeFile(manifestPath, source);
+
+                Intent intent = new Intent(this, SrcCodeEditor.class);
+                intent.putExtra("content", manifestPath);
+                intent.putExtra("xml", "");
+                intent.putExtra("title", "AndroidManifest.xml");
+                startActivity(intent);
+            });
+        }).start();
     }
 
     private LibraryItemView createOption(String title, String description, int icon, View.OnClickListener onClick) {
@@ -211,43 +313,36 @@ public class AndroidManifestInjection extends BaseAppCompatActivity {
             HashMap<String, Object> _item = new HashMap<>();
             _item.put("name", componentName);
             _item.put("value", "android:configChanges=\"orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout\"");
-
             data.add(_item);
         }
         {
             HashMap<String, Object> _item = new HashMap<>();
             _item.put("name", componentName);
             _item.put("value", "android:hardwareAccelerated=\"true\"");
-
             data.add(_item);
         }
         {
             HashMap<String, Object> _item = new HashMap<>();
             _item.put("name", componentName);
             _item.put("value", "android:supportsPictureInPicture=\"true\"");
-
             data.add(_item);
         }
         {
             HashMap<String, Object> _item = new HashMap<>();
             _item.put("name", componentName);
             _item.put("value", "android:screenOrientation=\"portrait\"");
-
             data.add(_item);
         }
         {
             HashMap<String, Object> _item = new HashMap<>();
             _item.put("name", componentName);
             _item.put("value", "android:theme=\"@style/AppTheme\"");
-
             data.add(_item);
         }
-
         {
             HashMap<String, Object> _item = new HashMap<>();
             _item.put("name", componentName);
             _item.put("value", "android:windowSoftInputMode=\"stateHidden\"");
-
             data.add(_item);
         }
 
@@ -264,7 +359,9 @@ public class AndroidManifestInjection extends BaseAppCompatActivity {
             data = getGson().fromJson(FileUtil.readFile(path), Helper.TYPE_MAP_LIST);
             for (int i = 0; i < data.size(); i++) {
                 if (!temp.contains(Objects.requireNonNull(data.get(i).get("name")).toString())) {
-                    if (!Objects.requireNonNull(data.get(i).get("name")).equals("_application_attrs") && !Objects.requireNonNull(data.get(i).get("name")).equals("_apply_for_all_activities") && !Objects.requireNonNull(data.get(i).get("name")).equals("_application_permissions")) {
+                    if (!Objects.requireNonNull(data.get(i).get("name")).equals("_application_attrs")
+                            && !Objects.requireNonNull(data.get(i).get("name")).equals("_apply_for_all_activities")
+                            && !Objects.requireNonNull(data.get(i).get("name")).equals("_application_permissions")) {
                         temp.add((String) data.get(i).get("name"));
                     }
                 }
