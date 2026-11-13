@@ -453,7 +453,6 @@ public class ExtraPaletteBlock {
     }
 
     // ───── PEMBERSIHAN BLOK DINAMIS LAMA ─────
-    // Hapus semua blok yang diawali "custom_call_" agar tidak bentrok antar project
     for (int i = fileData.size() - 1; i >= 0; i--) {
         Object name = fileData.get(i).get("name");
         if (name instanceof String && ((String) name).startsWith("custom_call_")) {
@@ -475,15 +474,65 @@ public class ExtraPaletteBlock {
         for (JavaMethodExtractor.MethodInfo m : cls.methods) {
             String opCode = "custom_call_" + cls.className + "_" + m.methodName;
 
-            // 1. Buat Spec (Tampilan Blok)
+            // 1. Buat Spec (Tampilan Blok dengan Label & Tipe yang Tepat)
             StringBuilder specBuilder = new StringBuilder(cls.className + "." + m.methodName + "(");
             for (int i = 0; i < m.inputCount; i++) {
-                // PERBAIKAN: Cek apakah tipenya Context atau Activity
                 String paramType = m.paramTypes.get(i);
-                if (paramType.contains("Context") || paramType.contains("Activity")) {
-                    specBuilder.append("%m.activity"); // Slot objek Activity
+                String paramName = m.paramNames.get(i);
+                
+                // Tampilkan nama parameter sebagai label
+                specBuilder.append(paramName).append(": ");
+                
+                // Deteksi Tipe Data Spesifik
+                String typeLower = paramType.toLowerCase();
+                String nameLower = paramName.toLowerCase();
+
+                if (typeLower.contains("context") || typeLower.contains("activity")) {
+                    specBuilder.append("%m.activity");
+                } else if (typeLower.contains("intent")) {
+                    specBuilder.append("%m.intent");
+                } else if (typeLower.equals("boolean") || typeLower.equals("Boolean".toLowerCase())) {
+                    specBuilder.append("%b");
+                } else if (typeLower.equals("int") || typeLower.equals("integer") || typeLower.equals("double") || typeLower.equals("float") || typeLower.equals("long")) {
+                    if (nameLower.contains("color")) {
+                        specBuilder.append("%m.color");
+                    } else if (nameLower.contains("res") || nameLower.contains("string_res")) {
+                        specBuilder.append("%m.ResString");
+                    } else {
+                        specBuilder.append("%d");
+                    }
+                } else if (typeLower.contains("list") || typeLower.contains("arraylist")) {
+                    if (typeLower.contains("map") || typeLower.contains("hashmap")) {
+                        specBuilder.append("%m.listMap");
+                    } else if (typeLower.contains("string")) {
+                        specBuilder.append("%m.listStr");
+                    } else if (typeLower.contains("int") || typeLower.contains("double")) {
+                        specBuilder.append("%m.listInt");
+                    } else {
+                        specBuilder.append("%m.list");
+                    }
+                } else if (typeLower.contains("map") || typeLower.contains("hashmap")) {
+                    specBuilder.append("%m.varMap");
+                } else if (typeLower.contains("textview")) {
+                    specBuilder.append("%m.textview");
+                } else if (typeLower.contains("edittext")) {
+                    specBuilder.append("%m.edittext");
+                } else if (typeLower.contains("imageview")) {
+                    specBuilder.append("%m.imageview");
+                } else if (typeLower.contains("listview")) {
+                    specBuilder.append("%m.listview");
+                } else if (typeLower.contains("viewgroup") || typeLower.contains("layout")) {
+                    specBuilder.append("%m.layout");
+                } else if (typeLower.contains("view")) {
+                    specBuilder.append("%m.view");
+                } else if (typeLower.contains("anim")) {
+                    specBuilder.append("%m.anim");
+                } else if (typeLower.contains("drawable") || typeLower.contains("bitmap")) {
+                    specBuilder.append("%m.drawable");
+                } else if (typeLower.contains("resource") || typeLower.contains("resources")) {
+                    specBuilder.append("%m.resource");
                 } else {
-                    specBuilder.append("%s"); // Slot teks biasa
+                    specBuilder.append("%s"); // Default jika String / Class kustom
                 }
                 
                 if (i < m.inputCount - 1) specBuilder.append(", ");
@@ -499,7 +548,6 @@ public class ExtraPaletteBlock {
                 if (i < m.inputCount - 1) codeBuilder.append(", ");
             }
             
-            // Jika method HANYA butuh Context (tanpa parameter lain), otomatis isi "this"
             if (m.requiresContext && m.inputCount == 0) {
                 codeBuilder.append("this");
             }
@@ -517,13 +565,12 @@ public class ExtraPaletteBlock {
         }
     }
 
-    // Tulis ke file SETELAH pembersihan dan penambahan
+    // Tulis ke file
     try {
         FileUtil.writeFile(file.getAbsolutePath(), new com.google.gson.Gson().toJson(fileData));
     } catch (Exception e) {
         e.printStackTrace();
     }
-    // ─────────────────────────────────────────
     return;
 }
 
