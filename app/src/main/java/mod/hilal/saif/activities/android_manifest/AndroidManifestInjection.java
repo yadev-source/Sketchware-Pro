@@ -120,7 +120,7 @@ public class AndroidManifestInjection extends BaseAppCompatActivity {
             startActivity(intent);
         }), true);
 
-        basicCategoryView.addLibraryItem(createOption("Launcher Activity", "Change the default Launcher Activity", R.drawable.ic_mtrl_login, v -> showLauncherActDialog(AndroidManifestInjector.getLauncherActivity(sc_id))), true);
+        basicCategoryView.addLibraryItem(createOption("Launcher Activities", "Change the default Launcher Activity", R.drawable.ic_mtrl_login, v -> showLauncherActDialog(AndroidManifestInjector.getLauncherActivity(sc_id))), true);
 
         basicCategoryView.addLibraryItem(createOption("All Activities", "Add attributes for all Activities", R.drawable.ic_mtrl_frame_source, v -> {
             Intent intent = new Intent();
@@ -131,42 +131,22 @@ public class AndroidManifestInjection extends BaseAppCompatActivity {
             startActivity(intent);
         }), true);
 
-        basicCategoryView.addLibraryItem(createOption("App Components", "Add extra components", R.drawable.ic_mtrl_component, v -> showAppComponentDialog()), false);
-
-        // ───── NEW: Edit Manifest (item biasa, tanpa switch) ─────
+        // ───── NEW: List Activity ─────
         basicCategoryView.addLibraryItem(createOption(
-                "Edit Manifest",
-                "Open AndroidManifest.xml in the code editor to view or edit it directly",
-                R.drawable.ic_mtrl_code,
-                v -> openManifestEditor()
+                "List Activity",
+                "View and manage all activities listed in the manifest",
+                R.drawable.ic_mtrl_format_list_bulleted,
+                v -> {
+                    Intent intent = new Intent();
+                    intent.setClass(getApplicationContext(), AndroidManifestListActivity.class);
+                    intent.putExtra("sc_id", sc_id);
+                    startActivity(intent);
+                }
         ), true);
 
+        basicCategoryView.addLibraryItem(createOption("App Components", "Add extra components", R.drawable.ic_mtrl_component, v -> showAppComponentDialog()), false);
+
         options.forEach(binding.cards::addView);
-    }
-
-    private void openManifestEditor() {
-        k();
-        new Thread(() -> {
-            String source = new yq(getApplicationContext(), sc_id).getFileSrc(
-                    "AndroidManifest.xml", jC.b(sc_id), jC.a(sc_id), jC.c(sc_id));
-
-            runOnUiThread(() -> {
-                if (isFinishing()) return;
-                h();
-
-                String dir = FileUtil.getExternalStorageDir()
-                        + "/.sketchware/data/" + sc_id + "/Injection/androidmanifest/";
-                FileUtil.makeDir(dir);
-                String manifestPath = dir + "AndroidManifest.xml";
-                FileUtil.writeFile(manifestPath, source);
-
-                Intent intent = new Intent(this, SrcCodeEditor.class);
-                intent.putExtra("content", manifestPath);
-                intent.putExtra("xml", "");
-                intent.putExtra("title", "AndroidManifest.xml");
-                startActivity(intent);
-            });
-        }).start();
     }
 
     private LibraryItemView createOption(String title, String description, int icon, View.OnClickListener onClick) {
