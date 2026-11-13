@@ -437,6 +437,9 @@ public class ExtraPaletteBlock {
     List<JavaMethodExtractor.JavaFileInfo> javaClasses = JavaMethodExtractor.scanProject(sc_id);
     boolean hasCustomMethods = false;
 
+    // Ambil data block yang sudah ada untuk mencegah duplikasi
+    ArrayList<HashMap<String, Object>> extraBlockData = ExtraBlockFile.getExtraBlockData();
+
     for (JavaMethodExtractor.JavaFileInfo cls : javaClasses) {
         if (cls.voidMethods.isEmpty()) continue;
         
@@ -449,21 +452,40 @@ public class ExtraPaletteBlock {
         logicEditor.a(cls.className + ".java", getTitleBgColor());
 
         for (JavaMethodExtractor.MethodInfo m : cls.voidMethods) {
-            // OpCode unik untuk method ini
             String opCode = "custom_call_" + cls.className + "_" + m.name;
             
-            // Label blok yang muncul di layar
-            String blockText = "call " + cls.className + "." + m.name + "()";
+            // Tampilan blok di layar (Spec)
+            String spec = "call " + cls.className + "." + m.name + "()";
+            
+            // Kode Java yang akan di-generate saat compile
+            String code;
             if (m.requiresContext) {
-                blockText = "call " + cls.className + "." + m.name + "(" + m.rawParameters + ")";
+                code = "new " + cls.className + "()." + m.name + "(this);";
+            } else {
+                code = "new " + cls.className + "()." + m.name + "();";
             }
 
-            // Tipe "c" adalah Command (tidak mengembalikan nilai)
-            logicEditor.a(blockText, "c", opCode);
+            // 1. Cek apakah blok ini sudah terdaftar di sistem
+            boolean isRegistered = false;
+            for (HashMap<String, Object> map : extraBlockData) {
+                if (opCode.equals(map.get("name"))) {
+                    isRegistered = true;
+                    break;
+                }
+            }
+
+            // 2. Jika belum, daftarkan menggunakan fungsi buatanmu!
+            if (!isRegistered) {
+                HashMap<String, Object> newBlock = ExtraBlocks.createDynamicBlock(opCode, spec, code);
+                newBlock.put("palette", "0"); // Paksa masuk ke palet Variable
+                extraBlockData.add(newBlock);
+            }
+
+            // 3. Tampilkan ke layar
+            logicEditor.a(spec, " ", opCode);
         }
     }
     // ─────────────────────────────────────────
-    
     return;
 
             case 1:
