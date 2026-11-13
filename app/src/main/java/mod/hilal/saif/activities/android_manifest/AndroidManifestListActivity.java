@@ -30,6 +30,7 @@ import mod.remaker.view.CustomAttributeView;
 import pro.sketchware.R;
 import pro.sketchware.utility.FileUtil;
 import pro.sketchware.utility.SketchwareUtil;
+import com.besome.sketch.beans.ProjectFileBean;
 
 public class AndroidManifestListActivity extends BaseAppCompatActivity {
 
@@ -113,21 +114,27 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
             if (value != null && value.startsWith("android:screenOrientation=")) {
                 String oriStr = value.replace("android:screenOrientation=\"", "").replace("\"", "");
                 int ori = -1;
-
-                // Konversi string ke int View Manager (0=Portrait, 1=Landscape, 2=Both)
+                
                 if (oriStr.equals("portrait")) ori = 0;
                 else if (oriStr.equals("landscape")) ori = 1;
                 else if (oriStr.equals("sensor") || oriStr.equals("fullSensor") || oriStr.equals("user")) ori = 2;
 
                 if (ori != -1) {
-                    // PERBAIKAN: Gunakan jC.a(sc_id) sebagai Project File Manager
-                    for (var bean : jC.a(sc_id).getActivityFiles()) {
-                        if (bean.getJavaName().equals(name + ".java")) {
-                            bean.setOrientation(ori);
-                            break;
+                    // KUNCI PERBAIKAN: Gunakan jC.b(sc_id).b() untuk mengambil list ProjectFileBean
+                    ArrayList<com.besome.sketch.beans.ProjectFileBean> fileBeans = jC.b(sc_id).b();
+                    
+                    if (fileBeans != null) {
+                        for (com.besome.sketch.beans.ProjectFileBean bean : fileBeans) {
+                            // Cocokkan nama file (contoh: "MainActivity.java")
+                            if (bean.getJavaName().equals(name + ".java")) {
+                                // Set orientasi baru ke View Manager
+                                bean.setOrientation(ori); 
+                                break;
+                            }
                         }
                     }
-                    // Hapus dari JSON agar tidak mengunci manifest (biarkan View Manager yang bekerja)
+                    
+                    // Hapus dari JSON
                     attrsData.remove(i);
                     isChanged = true;
                 }
