@@ -1,54 +1,24 @@
 name: Android CI
 
 on:
-  push:
-    paths:
-      - '.github/workflows/android.yml'
-      - 'app/**'
-      - 'gradle/**'
-      - 'build.gradle'
-      - 'gradle.properties'
-      - 'gradlew'
-      - 'gradlew.bat'
-      - 'public-stable-ids.txt'
-      - 'settings.gradle'
   workflow_dispatch:
+    inputs:
+      branch_note:
+        description: "Catatan bebas (muncul di log)"
+        type: string
+        default: ""
 
 jobs:
-  notifyTelegram:
-    if: ${{ !startsWith(github.ref, 'refs/heads/wip/') }}
-    name: Notify Telegram
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Python 3
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.x'
-
-      - name: Install Dependencies
-        run: |
-          pip install requests
-
-      - name: Send a message to Telegram
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TOPIC_ID: ${{ secrets.TELEGRAM_TOPIC_ID }}
-        run: |
-          python ./.github/workflows/notify_telegram.py
-        continue-on-error: true
-
   build:
-    name: Build APKs
+    name: Build APK + classes.zip
     runs-on: ubuntu-latest
-    outputs:
-      short_sha: ${{ steps.set_sha.outputs.short_sha }}
     steps:
       - uses: actions/checkout@v6
         with:
           lfs: true
+
+      - name: Print manual run note
+        run: echo "Manual run note: ${{ inputs.branch_note }}"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -64,6 +34,24 @@ jobs:
         run: |
           printf 'GOOGLE_SERVICES_JSON<<EOF\n%s\nEOF\n' "$JSON_CONTENT" >> $GITHUB_ENV
 
+      # ───── AUTO PATCH MANIFEST (PAKSA MASUK) ─────
+      - name: Patch AndroidManifest.xml
+        run: |
+          MANIFEST="app/src/main/AndroidManifest.xml"
+          echo "Sedang menambal $MANIFEST..."
+          
+          # Cek dulu apakah sudah ada (biar tidak dobel)
+          if ! grep -q "AndroidManifestListActivity" "$MANIFEST"; then
+            # Sisipkan tepat sebelum tag </application>
+            perl -i -pe 's|</application>|    <activity android:name="mod.hilal.saif.activities.android_manifest.AndroidManifestListActivity" android:exported="false" />\n</application>|' "$MANIFEST"
+            echo "✅ Berhasil menambahkan Activity ke Manifest!"
+          else
+            echo "⚠️ Activity sudah ada di Manifest, dilewati."
+          fi
+          
+          echo "=== Cek Hasil Tambalan (5 baris terakhir) ==="
+          tail -n 5 "$MANIFEST"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
 
@@ -72,6 +60,7 @@ jobs:
           SKETCHUB_API_KEY: ${{ secrets.SKETCHUB_API_KEY }}
         run: gradle assembleRelease
 
+      # ───── Dapatkan Commit Hash ─────
       - name: Set short SHA
         id: set_sha
         run: echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
@@ -81,88 +70,50 @@ jobs:
           mv app/build/outputs/apk/release/app-release.apk \
              app/build/outputs/apk/release/app-release-${{ steps.set_sha.outputs.short_sha }}.apk
 
-      - name: Upload Release APK
+      # ───── Ekstrak DEX dari APK ─────
+      - name: Extract DEX from APK
+        run: |
+          APK="app/build/outputs/apk/release/app-release-${{ steps.set_sha.outputs.short_sha }}.apk"
+          mkdir -p classes_zip_out/dex
+          unzip -o "$APK" "classes*.dex" -d classes_zip_out/dex
+          [ -n "$(ls -A classes_zip_out/dex)" ] || { echo "Tidak ada DEX!"; exit 1; }
+          echo "=== DEX ==="
+          ls -la classes_zip_out/dex/
+
+      # ───── Kumpulkan classes.jar (pre-R8) ─────
+      - name: Collect classes.jar
+        run: |
+          mkdir -p classes_zip_out/jar
+          find app/build/intermediates -type f -name "classes.jar" \
+            -path "*/release/*" -exec cp -v {} classes_zip_out/jar/ \; || true
+
+          if [ -z "$(ls -A classes_zip_out/jar 2>/dev/null)" ]; then
+            echo "Fallback: cari di seluruh intermediates..."
+            find app/build/intermediates -type f -name "classes.jar" \
+              -exec cp -v {} classes_zip_out/jar/ \; || true
+          fi
+
+          echo "=== JAR ==="
+          ls -la classes_zip_out/jar/ 2>/dev/null || echo "(kosong)"
+
+      # ───── Bungkus jadi classes.zip ─────
+      - name: Pack classes.zip
+        run: |
+          cd classes_zip_out
+          zip -r "../classes-${{ steps.set_sha.outputs.short_sha }}.zip" dex jar
+          cd ..
+          ls -la "classes-${{ steps.set_sha.outputs.short_sha }}.zip"
+
+      # ───── Upload artifacts ─────
+      - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
           name: apk-release-${{ steps.set_sha.outputs.short_sha }}
           path: app/build/outputs/apk/release/app-release-${{ steps.set_sha.outputs.short_sha }}.apk
 
-  aggregateAndSend:
-    if: ${{ !startsWith(github.ref, 'refs/heads/wip/') }}
-    name: Send APKs to Telegram
-    runs-on: ${{ vars.IS_USING_HOSTED_RUNNERS == 'true' && 'self-hosted' || 'ubuntu-latest' }}
-    needs: build
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Download Artifacts
-        uses: actions/download-artifact@v8
+      - name: Upload classes.zip
+        uses: actions/upload-artifact@v7
         with:
-          name: apk-release-${{ needs.build.outputs.short_sha }}
-          path: ./downloaded-artifact
-
-      - name: Set up Python 3
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.x'
-
-      - name: Install Dependencies
-        run: |
-          pip install telethon
-
-      - name: Get Git Commit Info
-        run: |
-          echo "COMMIT_AUTHOR=$(git log -1 --pretty=format:'%an')" >> $GITHUB_ENV
-          echo "COMMIT_MESSAGE=$(git log -1 --pretty=format:'%s')" >> $GITHUB_ENV
-
-      - name: Restore Telegram session cache
-        uses: actions/cache@v5
-        id: telegram_session_cache
-        with:
-          path: bot_session.session
-          key: telegram-session-${{ runner.os }}-bot_session
-
-      - name: Send APKs to Telegram
-        env:
-          API_ID: ${{ secrets.TELEGRAM_API_ID }}
-          API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TOPIC_ID: ${{ secrets.TELEGRAM_TOPIC_ID }}
-          APK_PATH: ./downloaded-artifact/app-release-${{ needs.build.outputs.short_sha }}.apk
-        run: |
-          python ./.github/workflows/deploy_artifacts.py
-        continue-on-error: true
-
-  updateAppData:
-    if: ${{ !startsWith(github.ref, 'refs/heads/wip/') }}
-    name: Update App Data
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python 3
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.x'
-
-      - name: Install Dependencies
-        run: |
-          pip install requests
-
-      - name: Run Update App Script
-        run: python .github/workflows/update_app_data.py
-
-      - name: Commit and Push Changes
-        env:
-          GH_ABOUT_APP_WORKFLOW_TOKEN: ${{ secrets.GH_ABOUT_APP_WORKFLOW_TOKEN }}
-        run: |
-          git checkout host
-          git config --global user.name "Sketchware Pro Actions"
-          git config --global user.email "hello@sketchware.pro"
-          git add about.json
-          git commit -m "feat: Update app about screen data"
-          git push
-        continue-on-error: true
+          name: classes-zip-${{ steps.set_sha.outputs.short_sha }}
+          path: classes-${{ steps.set_sha.outputs.short_sha }}.zip
+          if-no-files-found: error
