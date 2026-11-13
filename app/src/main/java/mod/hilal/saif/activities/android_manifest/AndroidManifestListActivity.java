@@ -101,44 +101,44 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
 
     // Fungsi untuk memindahkan orientasi dari attributes.json ke View Manager
     private void syncFromJsonToViewManager() {
-        String attrsPath = FileUtil.getExternalStorageDir() + "/.sketchware/data/" + sc_id + "/Injection/androidmanifest/attributes.json";
-        if (FileUtil.isExistFile(attrsPath)) {
-            ArrayList<HashMap<String, Object>> attrsData = getGson().fromJson(FileUtil.readFile(attrsPath), Helper.TYPE_MAP_LIST);
-            boolean isChanged = false;
+    String attrsPath = FileUtil.getExternalStorageDir() + "/.sketchware/data/" + sc_id + "/Injection/androidmanifest/attributes.json";
+    if (FileUtil.isExistFile(attrsPath)) {
+        ArrayList<HashMap<String, Object>> attrsData = getGson().fromJson(FileUtil.readFile(attrsPath), Helper.TYPE_MAP_LIST);
+        boolean isChanged = false;
 
-            for (int i = attrsData.size() - 1; i >= 0; i--) {
-                String name = (String) attrsData.get(i).get("name");
-                String value = (String) attrsData.get(i).get("value");
+        for (int i = attrsData.size() - 1; i >= 0; i--) {
+            String name = (String) attrsData.get(i).get("name");
+            String value = (String) attrsData.get(i).get("value");
 
-                if (value != null && value.startsWith("android:screenOrientation=")) {
-                    String oriStr = value.replace("android:screenOrientation=\"", "").replace("\"", "");
-                    int ori = -1;
-                    
-                    // Konversi string ke int View Manager (0=Portrait, 1=Landscape, 2=Both)
-                    if (oriStr.equals("portrait")) ori = 0;
-                    else if (oriStr.equals("landscape")) ori = 1;
-                    else if (oriStr.equals("sensor") || oriStr.equals("fullSensor") || oriStr.equals("user")) ori = 2;
+            if (value != null && value.startsWith("android:screenOrientation=")) {
+                String oriStr = value.replace("android:screenOrientation=\"", "").replace("\"", "");
+                int ori = -1;
 
-                    if (ori != -1) {
-                        // Update View Manager (ProjectFileBean)
-                        for (var bean : jC.c(sc_id).getActivityFiles()) {
-                            if (bean.getJavaName().equals(name + ".java")) {
-                                bean.setOrientation(ori);
-                                break;
-                            }
+                // Konversi string ke int View Manager (0=Portrait, 1=Landscape, 2=Both)
+                if (oriStr.equals("portrait")) ori = 0;
+                else if (oriStr.equals("landscape")) ori = 1;
+                else if (oriStr.equals("sensor") || oriStr.equals("fullSensor") || oriStr.equals("user")) ori = 2;
+
+                if (ori != -1) {
+                    // PERBAIKAN: Gunakan jC.a(sc_id) sebagai Project File Manager
+                    for (var bean : jC.a(sc_id).getActivityFiles()) {
+                        if (bean.getJavaName().equals(name + ".java")) {
+                            bean.setOrientation(ori);
+                            break;
                         }
-                        // Hapus dari JSON agar tidak mengunci manifest (biarkan View Manager yang bekerja)
-                        attrsData.remove(i);
-                        isChanged = true;
                     }
+                    // Hapus dari JSON agar tidak mengunci manifest (biarkan View Manager yang bekerja)
+                    attrsData.remove(i);
+                    isChanged = true;
                 }
             }
+        }
 
-            if (isChanged) {
-                FileUtil.writeFile(attrsPath, getGson().toJson(attrsData));
-            }
+        if (isChanged) {
+            FileUtil.writeFile(attrsPath, getGson().toJson(attrsData));
         }
     }
+}
 
     private List<ActivityData> parseActivities(String xml) {
         List<ActivityData> result = new ArrayList<>();
