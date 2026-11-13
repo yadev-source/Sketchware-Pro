@@ -1,7 +1,13 @@
 package mod.hilal.saif.activities.android_manifest;
 
+import static pro.sketchware.utility.GsonUtils.getGson;
+
 import android.content.Intent;
+import android.graphics.Color;
 import android.os.Bundle;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
@@ -10,9 +16,9 @@ import android.widget.ListView;
 import androidx.appcompat.widget.Toolbar;
 
 import com.besome.sketch.lib.base.BaseAppCompatActivity;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -22,17 +28,20 @@ import a.a.a.yq;
 import mod.hey.studios.util.Helper;
 import mod.remaker.view.CustomAttributeView;
 import pro.sketchware.R;
+import pro.sketchware.utility.FileUtil;
 import pro.sketchware.utility.SketchwareUtil;
 
 public class AndroidManifestListActivity extends BaseAppCompatActivity {
 
     private static class ActivityData {
         String name;
-        String attributes;
+        String displayAttributes; // Format: configChanges | hardwareAccelerated
+        List<String[]> rawAttributes; // Untuk sinkronisasi ke JSON
 
-        ActivityData(String name, String attributes) {
+        ActivityData(String name, String displayAttributes, List<String[]> rawAttributes) {
             this.name = name;
-            this.attributes = attributes;
+            this.displayAttributes = displayAttributes;
+            this.rawAttributes = rawAttributes;
         }
     }
 
@@ -88,13 +97,11 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
         }).start();
     }
 
-    // Fungsi Parsing Manual menggunakan String & Regex (Sangat Aman)
     private List<ActivityData> parseActivities(String xml) {
         List<ActivityData> result = new ArrayList<>();
         if (xml == null || xml.isEmpty()) return result;
 
-        // Hapus komentar XML agar tidak salah baca
-        xml = xml.replaceAll("(?s)<!--.*?-->", "");
+        xml = xml.replaceAll("(?s)<!--.*?-->", ""); // Hapus komentar
 
         int idx = 0;
         while (true) {
@@ -104,9 +111,8 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
             if (end < 0) break;
 
             String tag = xml.substring(start, end);
-
-            // Cari android:name="..."
             String name = null;
+            
             int nStart = tag.indexOf("android:name=\"");
             if (nStart >= 0) {
                 nStart += "android:name=\"".length();
@@ -117,44 +123,68 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
             }
 
             if (name != null && !name.isEmpty()) {
-                // Bersihkan nama (buang package & titik)
                 if (name.contains(".")) {
                     name = name.substring(name.lastIndexOf(".") + 1);
                 }
 
-                // Ambil semua atribut menggunakan Regex
-                StringBuilder attrs = new StringBuilder();
+                List<String> attrKeys = new ArrayList<>();
+                List<String[]> rawAttrs = new ArrayList<>();
                 Pattern pattern = Pattern.compile("([a-zA-Z0-9_:]+)=\"([^\"]*)\"");
                 Matcher matcher = pattern.matcher(tag);
+                
                 while (matcher.find()) {
                     String key = matcher.group(1);
                     String val = matcher.group(2);
-                    // Jangan tampilkan atribut name di list
                     if (!key.equals("android:name") && !key.equals("name")) {
-                        attrs.append("  ").append(key).append("=\"").append(val).append("\"\n");
+                        // Ambil nama atributnya saja, buang "android:"
+                        String cleanKey = key.replace("android:", "");
+                        attrKeys.add(cleanKey);
+                        rawAttrs.add(new String[]{key, val});
                     }
                 }
 
-                result.add(new ActivityData(name, attrs.toString().trim()));
+                // Gabungkan dengan pemisah " | "
+                String displayAttrs = String.join(" | ", attrKeys);
+                result.add(new ActivityData(name, displayAttrs, rawAttrs));
             }
-
             idx = end + 1;
         }
         return result;
     }
 
-    private void deleteActivityData(String activityName) {
-        String path = pro.sketchware.utility.FileUtil.getExternalStorageDir().concat("/.sketchware/data/").concat(sc_id).concat("/Injection/androidmanifest/attributes.json");
-        if (pro.sketchware.utility.FileUtil.isExistFile(path)) {
-            ArrayList<java.util.HashMap<String, Object>> data = pro.sketchware.utility.GsonUtils.getGson().fromJson(pro.sketchware.utility.FileUtil.readFile(path), Helper.TYPE_MAP_LIST);
-            for (int i = data.size() - 1; i > -1; i--) {
-                String name = (String) data.get(i).get("name");
-                if (java.util.Objects.requireNonNull(name).equals(activityName)) {
-                    data.remove(i);
+    private void syncAttributesToJson(ActivityData data) {
+        String path = FileUtil.getExternalStorageDir().concat("/.sketchware/data/").concat(sc_id).concat("/Injection/androidmanifest/attributes.json");
+        ArrayList<HashMap<String, Object>> jsonList = new ArrayList<>();
+        
+        if (FileUtil.isExistFile(path)) {
+            jsonList = getGson().fromJson(FileUtil.readFile(path), Helper.TYPE_MAP_LIST);
+        }
+
+        boolean isChanged = false;
+        for (String[] attr : data.rawAttributes) {
+            String key = attr[0];
+            String val = attr[1];
+            String valueStr = key + "=\"" + val + "\"";
+            
+            boolean exists = false;
+            for (HashMap<String, Object> map : jsonList) {
+                if (data.name.equals(map.get("name")) && valueStr.equals(map.get("value"))) {
+                    exists = true;
+                    break;
                 }
             }
-            pro.sketchware.utility.FileUtil.writeFile(path, pro.sketchware.utility.GsonUtils.getGson().toJson(data));
-            SketchwareUtil.toast("Activity attributes removed");
+
+            if (!exists) {
+                HashMap<String, Object> map = new HashMap<>();
+                map.put("name", data.name);
+                map.put("value", valueStr);
+                jsonList.add(map);
+                isChanged = true;
+            }
+        }
+
+        if (isChanged) {
+            FileUtil.writeFile(path, getGson().toJson(jsonList));
         }
     }
 
@@ -180,40 +210,37 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
 
             ActivityData data = getItem(position);
             attributeView.getImageView().setVisibility(View.GONE);
+            
+            // Paksa TextView agar bisa multi-baris (wrap text)
+            attributeView.getTextView().setSingleLine(false);
 
-            // Format Tampilan
-            String displayText = "." + data.name;
-            if (!data.attributes.isEmpty()) {
-                displayText += "\n" + data.attributes;
-                attributeView.getTextView().setTextSize(12); // Perkecil jika ada atribut
-            } else {
-                attributeView.getTextView().setTextSize(16);
+            String title = "." + data.name;
+            String fullText = title;
+            
+            if (!data.displayAttributes.isEmpty()) {
+                fullText += "\n" + data.displayAttributes;
             }
 
-            attributeView.getTextView().setText(displayText);
+            SpannableString spannable = new SpannableString(fullText);
+            
+            // Beri warna abu-abu hanya pada bagian atribut (baris kedua)
+            if (!data.displayAttributes.isEmpty()) {
+                spannable.setSpan(new ForegroundColorSpan(Color.GRAY), 
+                        title.length(), fullText.length(), 
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            
+            attributeView.getTextView().setText(spannable);
 
             attributeView.setOnClickListener(v -> {
+                syncAttributesToJson(data);
+                
                 Intent intent = new Intent();
                 intent.setClass(getApplicationContext(), AndroidManifestInjectionDetails.class);
                 intent.putExtra("sc_id", sc_id);
                 intent.putExtra("file_name", data.name); 
                 intent.putExtra("type", "activity");
                 startActivity(intent);
-            });
-
-            attributeView.setOnLongClickListener(v -> {
-                MaterialAlertDialogBuilder dialog = new MaterialAlertDialogBuilder(AndroidManifestListActivity.this);
-                dialog.setIcon(R.drawable.icon_delete);
-                dialog.setTitle(Helper.getResString(R.string.delete_custom_activity_dialog_title));
-                dialog.setMessage(Helper.getResString(R.string.delete_custom_activity_dialog_message).replace("%1$s", data.name));
-                dialog.setPositiveButton(Helper.getResString(R.string.common_word_delete), (d, which) -> {
-                    deleteActivityData(data.name);
-                    loadActivities();
-                    d.dismiss();
-                });
-                dialog.setNegativeButton(Helper.getResString(R.string.common_word_cancel), null);
-                dialog.show();
-                return true;
             });
 
             return attributeView;
