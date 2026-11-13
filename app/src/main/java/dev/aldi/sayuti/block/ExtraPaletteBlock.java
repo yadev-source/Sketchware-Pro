@@ -478,7 +478,14 @@ public class ExtraPaletteBlock {
             // 1. Buat Spec (Tampilan Blok)
             StringBuilder specBuilder = new StringBuilder(cls.className + "." + m.methodName + "(");
             for (int i = 0; i < m.inputCount; i++) {
-                specBuilder.append("%s");
+                // PERBAIKAN: Cek apakah tipenya Context atau Activity
+                String paramType = m.paramTypes.get(i);
+                if (paramType.contains("Context") || paramType.contains("Activity")) {
+                    specBuilder.append("%m.activity"); // Slot objek Activity
+                } else {
+                    specBuilder.append("%s"); // Slot teks biasa
+                }
+                
                 if (i < m.inputCount - 1) specBuilder.append(", ");
             }
             specBuilder.append(")");
