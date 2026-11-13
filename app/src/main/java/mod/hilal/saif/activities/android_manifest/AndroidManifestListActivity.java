@@ -35,8 +35,8 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
 
     private static class ActivityData {
         String name;
-        String displayAttributes; // Format: configChanges | hardwareAccelerated
-        List<String[]> rawAttributes; // Untuk sinkronisasi ke JSON
+        String displayAttributes;
+        List<String[]> rawAttributes;
 
         ActivityData(String name, String displayAttributes, List<String[]> rawAttributes) {
             this.name = name;
@@ -136,14 +136,12 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
                     String key = matcher.group(1);
                     String val = matcher.group(2);
                     if (!key.equals("android:name") && !key.equals("name")) {
-                        // Ambil nama atributnya saja, buang "android:"
                         String cleanKey = key.replace("android:", "");
                         attrKeys.add(cleanKey);
                         rawAttrs.add(new String[]{key, val});
                     }
                 }
 
-                // Gabungkan dengan pemisah " | "
                 String displayAttrs = String.join(" | ", attrKeys);
                 result.add(new ActivityData(name, displayAttrs, rawAttrs));
             }
@@ -152,6 +150,7 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
         return result;
     }
 
+    // ───── PERUBAHAN UTAMA ADA DI SINI ─────
     private void syncAttributesToJson(ActivityData data) {
         String path = FileUtil.getExternalStorageDir().concat("/.sketchware/data/").concat(sc_id).concat("/Injection/androidmanifest/attributes.json");
         ArrayList<HashMap<String, Object>> jsonList = new ArrayList<>();
@@ -160,32 +159,28 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
             jsonList = getGson().fromJson(FileUtil.readFile(path), Helper.TYPE_MAP_LIST);
         }
 
-        boolean isChanged = false;
+        // 1. Hapus semua atribut lama untuk activity ini agar tidak terjadi duplikasi
+        for (int i = jsonList.size() - 1; i >= 0; i--) {
+            if (data.name.equals(jsonList.get(i).get("name"))) {
+                jsonList.remove(i);
+            }
+        }
+
+        // 2. Masukkan kembali SEMUA atribut yang ada di manifest (termasuk dari View Manager)
         for (String[] attr : data.rawAttributes) {
             String key = attr[0];
             String val = attr[1];
-            String valueStr = key + "=\"" + val + "\"";
             
-            boolean exists = false;
-            for (HashMap<String, Object> map : jsonList) {
-                if (data.name.equals(map.get("name")) && valueStr.equals(map.get("value"))) {
-                    exists = true;
-                    break;
-                }
-            }
-
-            if (!exists) {
-                HashMap<String, Object> map = new HashMap<>();
-                map.put("name", data.name);
-                map.put("value", valueStr);
-                jsonList.add(map);
-                isChanged = true;
-            }
+            // Jangan masukkan android:name karena Ix akan otomatis membuatnya
+            if (key.equals("android:name") || key.equals("name")) continue;
+            
+            HashMap<String, Object> map = new HashMap<>();
+            map.put("name", data.name);
+            map.put("value", key + "=\"" + val + "\"");
+            jsonList.add(map);
         }
 
-        if (isChanged) {
-            FileUtil.writeFile(path, getGson().toJson(jsonList));
-        }
+        FileUtil.writeFile(path, getGson().toJson(jsonList));
     }
 
     private class ActivityListAdapter extends BaseAdapter {
@@ -211,7 +206,6 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
             ActivityData data = getItem(position);
             attributeView.getImageView().setVisibility(View.GONE);
             
-            // Paksa TextView agar bisa multi-baris (wrap text)
             attributeView.getTextView().setSingleLine(false);
 
             String title = "." + data.name;
@@ -223,7 +217,6 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
 
             SpannableString spannable = new SpannableString(fullText);
             
-            // Beri warna abu-abu hanya pada bagian atribut (baris kedua)
             if (!data.displayAttributes.isEmpty()) {
                 spannable.setSpan(new ForegroundColorSpan(Color.GRAY), 
                         title.length(), fullText.length(), 
@@ -233,6 +226,7 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
             attributeView.getTextView().setText(spannable);
 
             attributeView.setOnClickListener(v -> {
+                // Sinkronisasi semua atribut manifest (termasuk View Manager) ke JSON
                 syncAttributesToJson(data);
                 
                 Intent intent = new Intent();
