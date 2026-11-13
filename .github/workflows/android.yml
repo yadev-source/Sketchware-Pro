@@ -1,12 +1,18 @@
 name: Android CI
 
 on:
+  push:
+    paths:
+      - '.github/workflows/android.yml'
+      - 'app/**'
+      - 'gradle/**'
+      - 'build.gradle'
+      - 'gradle.properties'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'public-stable-ids.txt'
+      - 'settings.gradle'
   workflow_dispatch:
-    inputs:
-      branch_note:
-        description: "Catatan bebas (muncul di log)"
-        type: string
-        default: ""
 
 jobs:
   build:
@@ -16,9 +22,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           lfs: true
-
-      - name: Print manual run note
-        run: echo "Manual run note: ${{ inputs.branch_note }}"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -39,17 +42,13 @@ jobs:
         run: |
           MANIFEST="app/src/main/AndroidManifest.xml"
           echo "Sedang menambal $MANIFEST..."
-          
-          # Cek dulu apakah sudah ada (biar tidak dobel)
           if ! grep -q "AndroidManifestListActivity" "$MANIFEST"; then
-            # Sisipkan tepat sebelum tag </application>
             perl -i -pe 's|</application>|    <activity android:name="mod.hilal.saif.activities.android_manifest.AndroidManifestListActivity" android:exported="false" />\n</application>|' "$MANIFEST"
             echo "✅ Berhasil menambahkan Activity ke Manifest!"
           else
             echo "⚠️ Activity sudah ada di Manifest, dilewati."
           fi
-          
-          echo "=== Cek Hasil Tambalan (5 baris terakhir) ==="
+          echo "=== Cek Hasil Tambalan ==="
           tail -n 5 "$MANIFEST"
 
       - name: Setup Gradle
