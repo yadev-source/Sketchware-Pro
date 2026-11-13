@@ -135,7 +135,7 @@ public class AndroidManifestInjection extends BaseAppCompatActivity {
     basicCategoryView.addLibraryItem(createOption(
             "List Activity",
             "View all <activity> tags listed in AndroidManifest.xml",
-            R.drawable.ic_mtrl_format_list_bulleted,
+            R.drawable.ic_mtrl_list,
             v -> {
                 Intent intent = new Intent();
                 intent.setClass(getApplicationContext(), AndroidManifestListActivity.class);
