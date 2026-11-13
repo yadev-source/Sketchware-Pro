@@ -41,6 +41,9 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
     private final List<String> activityNames = new ArrayList<>();
     private ListView listView;
     private String sc_id;
+    
+    // Menyimpan daftar atribut per activity untuk ditampilkan di list
+    private HashMap<String, String> activityAttributesMap = new HashMap<>();
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -56,22 +59,42 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
         if (getSupportActionBar() != null) {
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
             getSupportActionBar().setDisplayShowTitleEnabled(true);
-            getSupportActionBar().setTitle("List Activity"); // Judul disesuaikan
+            getSupportActionBar().setTitle("List Activity");
         }
         toolbar.setNavigationOnClickListener(v -> onBackPressed());
 
         listView = findViewById(R.id.list_view);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Load ulang saat kembali dari halaman detail (agar atribut baru langsung terlihat)
         loadActivities();
     }
 
     private void loadActivities() {
         k();
         new Thread(() -> {
-            // Ambil source manifest dari project yang sedang dibuka
             String source = new yq(getApplicationContext(), sc_id)
                     .getFileSrc("AndroidManifest.xml", jC.b(sc_id), jC.a(sc_id), jC.c(sc_id));
 
             List<String> names = parseActivityNames(source);
+            
+            // Baca file attributes.json untuk melihat atribut yang sudah ada
+            activityAttributesMap.clear();
+            String attrsPath = FileUtil.getExternalStorageDir() + "/.sketchware/data/" + sc_id + "/Injection/androidmanifest/attributes.json";
+            if (FileUtil.isExistFile(attrsPath)) {
+                ArrayList<HashMap<String, Object>> attrsData = getGson().fromJson(FileUtil.readFile(attrsPath), Helper.TYPE_MAP_LIST);
+                for (HashMap<String, Object> map : attrsData) {
+                    String name = (String) map.get("name");
+                    String value = (String) map.get("value");
+                    if (name != null && value != null) {
+                        String existing = activityAttributesMap.getOrDefault(name, "");
+                        activityAttributesMap.put(name, existing + value + "\n");
+                    }
+                }
+            }
 
             runOnUiThread(() -> {
                 if (isFinishing()) return;
@@ -106,8 +129,6 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
                         name = el.getAttribute("android:name");
                     }
                     if (name != null && !name.isEmpty()) {
-                        // BERSIHKAN NAMA: Buang package dan titik di depan
-                        // Contoh: "com.app.MiawActivity" atau ".MiawActivity" -> "MiawActivity"
                         if (name.contains(".")) {
                             name = name.substring(name.lastIndexOf(".") + 1);
                         }
@@ -189,16 +210,26 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
 
             final String cleanName = getItem(position);
             
-            // Tampilan: Ikon disembunyikan, teks nama activity
             attributeView.getImageView().setVisibility(View.GONE);
-            attributeView.getTextView().setText("." + cleanName); // Tampilkan pakai titik agar cantik di UI
+            
+            // Tampilkan nama activity
+            attributeView.getTextView().setText("." + cleanName);
+
+            // Tampilkan preview atribut di bawah nama (jika ada)
+            String attrs = activityAttributesMap.get(cleanName);
+            if (attrs != null && !attrs.isEmpty()) {
+                // Gunakan setDescription atau text kecil jika CustomAttributeView mendukungnya
+                // Jika tidak, kita bisa memanipulasi textView-nya langsung
+                attributeView.getTextView().append("\n" + attrs.trim());
+                attributeView.getTextView().setTextSize(14); 
+            }
 
             attributeView.setOnClickListener(v -> {
                 Intent intent = new Intent();
                 intent.setClass(getApplicationContext(), AndroidManifestInjectionDetails.class);
                 intent.putExtra("sc_id", sc_id);
-                // KUNCI UTAMA: Kirim "MiawActivity.java" persis seperti yang diharapkan sistem Sketchware
-                intent.putExtra("file_name", cleanName + ".java");
+                // KUNCI PERBAIKAN: Hanya kirim nama class tanpa ".java" agar cocok dengan database
+                intent.putExtra("file_name", cleanName); 
                 intent.putExtra("type", "activity");
                 startActivity(intent);
             });
@@ -209,10 +240,8 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
                 dialog.setTitle(Helper.getResString(R.string.delete_custom_activity_dialog_title));
                 dialog.setMessage(Helper.getResString(R.string.delete_custom_activity_dialog_message).replace("%1$s", cleanName));
                 dialog.setPositiveButton(Helper.getResString(R.string.common_word_delete), (d, which) -> {
-                    // Hapus dari file JSON attributes.json
                     deleteActivityData(cleanName);
-                    // Refresh list
-                    loadActivities();
+                    loadActivities(); // Refresh list
                     d.dismiss();
                 });
                 dialog.setNegativeButton(Helper.getResString(R.string.common_word_cancel), null);
