@@ -36,7 +36,9 @@ import pro.sketchware.utility.FileResConfig;
 import pro.sketchware.utility.FileUtil;
 import pro.sketchware.utility.SketchwareUtil;
 import java.util.List;
-import mod.hey.studios.activity.managers.java.JavaMethodExtractor;
+import java.io.File;
+import dev.aldi.sayuti.block.ExtraBlockFile;
+import mod.hey.studios.util.Helper;
 
 public class ExtraPaletteBlock {
 
@@ -436,9 +438,28 @@ public class ExtraPaletteBlock {
     variables(); // Memunculkan variabel bawaan Sketchware
 
     // ───── TAMBAHAN: BLOK DARI FILE JAVA ─────
-    ArrayList<HashMap<String, Object>> customBlockData = ExtraBlockFile.getExtraBlockData();
     List<JavaMethodExtractor.JavaFileInfo> javaClasses = JavaMethodExtractor.scanProject(sc_id);
     boolean hasCustomMethods = false;
+
+    // Ambil data block dari file JSON
+    File file = ExtraBlockFile.EXTRA_BLOCKS_DATA_FILE;
+    ArrayList<HashMap<String, Object>> fileData = new ArrayList<>();
+    if (file.exists()) {
+        String content = FileUtil.readFile(file.getAbsolutePath());
+        if (content != null && !content.isEmpty() && !content.equals("[]")) {
+            fileData = new com.google.gson.Gson().fromJson(content, Helper.TYPE_MAP_LIST);
+        }
+    }
+
+    // ───── PEMBERSIHAN BLOK DINAMIS LAMA ─────
+    // Hapus semua blok yang diawali "custom_call_" agar tidak bentrok antar project
+    for (int i = fileData.size() - 1; i >= 0; i--) {
+        Object name = fileData.get(i).get("name");
+        if (name instanceof String && ((String) name).startsWith("custom_call_")) {
+            fileData.remove(i);
+        }
+    }
+    // ────────────────────────────────────────
 
     for (JavaMethodExtractor.JavaFileInfo cls : javaClasses) {
         if (cls.methods.isEmpty()) continue;
@@ -448,14 +469,12 @@ public class ExtraPaletteBlock {
             hasCustomMethods = true;
         }
 
-        // Header nama file (misal: "Utils.java")
         logicEditor.a(cls.className + ".java", getTitleBgColor());
 
         for (JavaMethodExtractor.MethodInfo m : cls.methods) {
             String opCode = "custom_call_" + cls.className + "_" + m.methodName;
 
-            // 1. Buat Tampilan Blok (Spec)
-            // Jika method punya parameter, buat slot input (%s) sebanyak parameternya
+            // 1. Buat Spec (Tampilan Blok)
             StringBuilder specBuilder = new StringBuilder(cls.className + "." + m.methodName + "(");
             for (int i = 0; i < m.inputCount; i++) {
                 specBuilder.append("%s");
@@ -464,45 +483,37 @@ public class ExtraPaletteBlock {
             specBuilder.append(")");
             String spec = specBuilder.toString();
 
-            // 2. Buat Kode Java (Code Generator)
+            // 2. Buat Kode Java
             StringBuilder codeBuilder = new StringBuilder();
-            // Asumsi menggunakan instansiasi (new Class()). 
-            // Jika method static, ini tetap aman di Java (hanya warning).
             codeBuilder.append("new ").append(cls.className).append("().").append(m.methodName).append("(");
-            
-            // Isi parameter dengan input dari user (%1$s, %2$s, dst)
             for (int i = 0; i < m.inputCount; i++) {
                 codeBuilder.append("%").append(i + 1).append("$s");
                 if (i < m.inputCount - 1) codeBuilder.append(", ");
             }
+            
+            // Jika method HANYA butuh Context (tanpa parameter lain), otomatis isi "this"
+            if (m.requiresContext && m.inputCount == 0) {
+                codeBuilder.append("this");
+            }
             codeBuilder.append(");");
             String code = codeBuilder.toString();
 
-            // 3. Cek apakah blok sudah terdaftar
-            boolean isRegistered = false;
-            for (HashMap<String, Object> map : customBlockData) {
-                if (opCode.equals(map.get("name"))) {
-                    isRegistered = true;
-                    break;
-                }
-            }
+            // 3. Daftarkan Blok Baru
+            HashMap<String, Object> newBlock = ExtraBlocks.createDynamicBlock(opCode, spec, code);
+            newBlock.put("type", m.blockType);
+            newBlock.put("palette", "0");
+            fileData.add(newBlock);
 
-            // 4. Daftarkan Blok Baru
-            if (!isRegistered) {
-                HashMap<String, Object> newBlock = ExtraBlocks.createDynamicBlock(opCode, spec, code);
-                
-                // Paksa tipe blok sesuai return type (void = " ", String = "s", Boolean = "b", Number = "d")
-                newBlock.put("type", m.blockType); 
-                
-                // Masukkan ke palet Variable (ID 0)
-                newBlock.put("palette", "0"); 
-                
-                customBlockData.add(newBlock);
-            }
-
-            // 5. Tampilkan ke layar
+            // 4. Tampilkan di layar
             logicEditor.a(spec, m.blockType, opCode);
         }
+    }
+
+    // Tulis ke file SETELAH pembersihan dan penambahan
+    try {
+        FileUtil.writeFile(file.getAbsolutePath(), new com.google.gson.Gson().toJson(fileData));
+    } catch (Exception e) {
+        e.printStackTrace();
     }
     // ─────────────────────────────────────────
     return;
