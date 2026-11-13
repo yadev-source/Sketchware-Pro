@@ -428,11 +428,43 @@ public class ExtraPaletteBlock {
                 }
                 return;
             case 0:
-                logicEditor.b("Add variable", "variableAdd");
-                logicEditor.b("Add custom variable", "variableAddNew", clickListener);
-                logicEditor.b("Remove variable", "variableRemove", clickListener);
-                variables();
-                return;
+    logicEditor.b("Add variable", "variableAdd");
+    logicEditor.b("Add custom variable", "variableAddNew", clickListener);
+    logicEditor.b("Remove variable", "variableRemove", clickListener);
+    variables(); // Memunculkan variabel bawaan Sketchware
+
+    // ───── TAMBAHAN: BLOK DARI FILE JAVA ─────
+    List<JavaMethodExtractor.JavaFileInfo> javaClasses = JavaMethodExtractor.scanProject(sc_id);
+    boolean hasCustomMethods = false;
+
+    for (JavaMethodExtractor.JavaFileInfo cls : javaClasses) {
+        if (cls.voidMethods.isEmpty()) continue;
+        
+        if (!hasCustomMethods) {
+            logicEditor.a("Custom Java Methods", getTitleBgColor());
+            hasCustomMethods = true;
+        }
+
+        // Header nama file (misal: "Utils.java")
+        logicEditor.a(cls.className + ".java", getTitleBgColor());
+
+        for (JavaMethodExtractor.MethodInfo m : cls.voidMethods) {
+            // OpCode unik untuk method ini
+            String opCode = "custom_call_" + cls.className + "_" + m.name;
+            
+            // Label blok yang muncul di layar
+            String blockText = "call " + cls.className + "." + m.name + "()";
+            if (m.requiresContext) {
+                blockText = "call " + cls.className + "." + m.name + "(" + m.rawParameters + ")";
+            }
+
+            // Tipe "c" adalah Command (tidak mengembalikan nilai)
+            logicEditor.a(blockText, "c", opCode);
+        }
+    }
+    // ─────────────────────────────────────────
+    
+    return;
 
             case 1:
                 logicEditor.b("Add list", "listAdd");
