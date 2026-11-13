@@ -164,4 +164,17 @@ public class ExtraBlocks {
             logicEditor.a("b", "fileIsHidden");
         }
     }
+
+public static HashMap<String, Object> createDynamicBlock(String opCode, String spec, String code) {
+    HashMap<String, Object> map = new HashMap<>();
+    map.put("name", opCode);
+    map.put("type", " "); // Command/Void
+    map.put("typeName", "");
+    map.put("code", code);
+    map.put("color", "#4a6cd4"); // Warna biru
+    map.put("palette", "-1");
+    map.put("spec", spec);
+    return map;
+}
+
 }
