@@ -151,11 +151,6 @@ public class Fx {
         } else if (type == 2) {
             return "\"" + escapeString(param) + "\"";
         } else if (type == 1) {
-            /**
-             * Ideally, a.a.a.Fx#a(BlockBean, String) should be responsible for parsing the input properly.
-             * However, upon decompiling this class, it seems to completely ignore this case.
-             * This is the solution for now to prevent errors during code generation.
-             */
             try {
                 if (param.isEmpty()) {
                     return "0";
@@ -170,7 +165,6 @@ public class Fx {
                 return param;
             }
         } else if (type == 0) {
-            //the same with type == 1
             if (param.isEmpty()) {
                 return "true";
             }
@@ -215,7 +209,6 @@ public class Fx {
             if (param.startsWith("R.attr.")) {
                 attr = param;
             } else if (param.startsWith("getMaterialColor(") && param.endsWith(")")) {
-                // to keep backward compatibility with old getMaterialColor calls
                 attr = param.substring("getMaterialColor(".length(), param.length() - 1);
             }
             if (attr != null) {
@@ -361,7 +354,6 @@ public class Fx {
                 break;
             case "insertMapToList":
                 opcode = String.format("%s.add((int)%s, %s);", params.get(2), params.get(1), params.get(0));
-
                 break;
             case "getMapInList":
                 opcode = String.format("%s = %s.get((int)%s);", params.get(2), params.get(1), params.get(0));
@@ -490,7 +482,6 @@ public class Fx {
                 break;
             case "strToListMap":
                 opcode = String.format("%s = new Gson().fromJson(%s, new TypeToken<ArrayList<HashMap<String, Object>>>(){}.getType());", params.get(1), params.get(0));
-
                 break;
             case "mathGetDip":
                 opcode = String.format("SketchwareUtil.getDip(getApplicationContext(), (int)(%s))", params.get(0));
@@ -1420,11 +1411,6 @@ public class Fx {
                 opcode = getCodeExtraBlock(bean, "\"\"");
         }
         
-        /*
-          switch block above should be responsible for handling %m param.
-          However, upon decompiling this class, it completely ignore this case.
-          This is the solution for now to prevent errors during code generation.
-         */
         if (hasEmptySelectorParam(params, bean.spec)) {
             opcode = "";
         }
@@ -1483,6 +1469,35 @@ public class Fx {
         } else {
             parameters.add(" ");
         }
+
+        // ───── HACK: GENERATE CUSTOM CALL SEPENUHNYA DI SINI ─────
+        // Jika ini adalah blok dinamis kita, kita buat kodenya langsung tanpa BlockLoader
+        if (blockBean.opCode.startsWith("custom_call_")) {
+            try {
+                // format: custom_call_Utils_showToast
+                String[] parts = blockBean.opCode.split("_");
+                if (parts.length >= 4) {
+                    String className = parts[2];
+                    String methodName = parts[3];
+
+                    StringBuilder codeBuilder = new StringBuilder();
+                    codeBuilder.append("new ").append(className).append("().").append(methodName).append("(");
+
+                    // Ambil parameter yang sudah diformat
+                    int inputCount = blockBean.parameters.size();
+                    for (int i = 0; i < inputCount; i++) {
+                        codeBuilder.append(parameters.get(i));
+                        if (i < inputCount - 1) codeBuilder.append(", ");
+                    }
+                    
+                    codeBuilder.append(");");
+                    return codeBuilder.toString();
+                }
+            } catch (Exception e) {
+                return "/* Error generating custom call: " + e.getMessage() + " */";
+            }
+        }
+        // ────────────────────────────────────────────────────────
 
         ExtraBlockInfo blockInfo = BlockLoader.getBlockInfo(blockBean.opCode);
 
