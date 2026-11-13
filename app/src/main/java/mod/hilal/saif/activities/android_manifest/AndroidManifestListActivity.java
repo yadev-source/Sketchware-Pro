@@ -1,5 +1,7 @@
 package mod.hilal.saif.activities.android_manifest;
 
+import static pro.sketchware.utility.GsonUtils.getGson;
+
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
@@ -14,6 +16,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
 
@@ -30,6 +33,7 @@ import a.a.a.yq;
 import mod.hey.studios.util.Helper;
 import mod.remaker.view.CustomAttributeView;
 import pro.sketchware.R;
+import pro.sketchware.utility.FileUtil;
 import pro.sketchware.utility.SketchwareUtil;
 
 public class AndroidManifestListActivity extends BaseAppCompatActivity {
@@ -52,7 +56,7 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
         if (getSupportActionBar() != null) {
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
             getSupportActionBar().setDisplayShowTitleEnabled(true);
-            getSupportActionBar().setTitle(R.string.design_drawer_menu_androidmanifest);
+            getSupportActionBar().setTitle("List Activity"); // Judul disesuaikan
         }
         toolbar.setNavigationOnClickListener(v -> onBackPressed());
 
@@ -63,6 +67,7 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
     private void loadActivities() {
         k();
         new Thread(() -> {
+            // Ambil source manifest dari project yang sedang dibuka
             String source = new yq(getApplicationContext(), sc_id)
                     .getFileSrc("AndroidManifest.xml", jC.b(sc_id), jC.a(sc_id), jC.c(sc_id));
 
@@ -101,6 +106,11 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
                         name = el.getAttribute("android:name");
                     }
                     if (name != null && !name.isEmpty()) {
+                        // BERSIHKAN NAMA: Buang package dan titik di depan
+                        // Contoh: "com.app.MiawActivity" atau ".MiawActivity" -> "MiawActivity"
+                        if (name.contains(".")) {
+                            name = name.substring(name.lastIndexOf(".") + 1);
+                        }
                         result.add(name);
                     }
                 }
@@ -125,14 +135,32 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
                 nStart += "android:name=\"".length();
                 int nEnd = tag.indexOf('"', nStart);
                 if (nEnd > nStart) {
-                    out.add(tag.substring(nStart, nEnd));
+                    String name = tag.substring(nStart, nEnd);
+                    if (name.contains(".")) {
+                        name = name.substring(name.lastIndexOf(".") + 1);
+                    }
+                    out.add(name);
                 }
             }
             idx = end + 1;
         }
     }
 
-    /** Adapter yang meniru tampilan AndroidManifestInjection.ListAdapter (pakai CustomAttributeView). */
+    private void deleteActivityData(String activityName) {
+        String path = FileUtil.getExternalStorageDir().concat("/.sketchware/data/").concat(sc_id).concat("/Injection/androidmanifest/attributes.json");
+        if (FileUtil.isExistFile(path)) {
+            ArrayList<HashMap<String, Object>> data = getGson().fromJson(FileUtil.readFile(path), Helper.TYPE_MAP_LIST);
+            for (int i = data.size() - 1; i > -1; i--) {
+                String name = (String) data.get(i).get("name");
+                if (Objects.requireNonNull(name).equals(activityName)) {
+                    data.remove(i);
+                }
+            }
+            FileUtil.writeFile(path, getGson().toJson(data));
+            SketchwareUtil.toast("Activity attributes removed");
+        }
+    }
+
     private class ActivityListAdapter extends BaseAdapter {
 
         @Override
@@ -159,17 +187,18 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
                 attributeView = (CustomAttributeView) convertView;
             }
 
-            // Samakan tampilan dengan daftar di AndroidManifestInjection:
-            // ikon disembunyikan, teks = nama activity
+            final String cleanName = getItem(position);
+            
+            // Tampilan: Ikon disembunyikan, teks nama activity
             attributeView.getImageView().setVisibility(View.GONE);
-            attributeView.getTextView().setText(getItem(position));
+            attributeView.getTextView().setText("." + cleanName); // Tampilkan pakai titik agar cantik di UI
 
-            final int pos = position;
             attributeView.setOnClickListener(v -> {
                 Intent intent = new Intent();
                 intent.setClass(getApplicationContext(), AndroidManifestInjectionDetails.class);
                 intent.putExtra("sc_id", sc_id);
-                intent.putExtra("file_name", getItem(pos));
+                // KUNCI UTAMA: Kirim "MiawActivity.java" persis seperti yang diharapkan sistem Sketchware
+                intent.putExtra("file_name", cleanName + ".java");
                 intent.putExtra("type", "activity");
                 startActivity(intent);
             });
@@ -178,12 +207,12 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
                 MaterialAlertDialogBuilder dialog = new MaterialAlertDialogBuilder(AndroidManifestListActivity.this);
                 dialog.setIcon(R.drawable.icon_delete);
                 dialog.setTitle(Helper.getResString(R.string.delete_custom_activity_dialog_title));
-                dialog.setMessage(Helper.getResString(R.string.delete_custom_activity_dialog_message)
-                        .replace("%1$s", getItem(pos)));
+                dialog.setMessage(Helper.getResString(R.string.delete_custom_activity_dialog_message).replace("%1$s", cleanName));
                 dialog.setPositiveButton(Helper.getResString(R.string.common_word_delete), (d, which) -> {
-                    // Opsional: hapus dari list saja (tidak menghapus dari manifest)
-                    activityNames.remove(pos);
-                    notifyDataSetChanged();
+                    // Hapus dari file JSON attributes.json
+                    deleteActivityData(cleanName);
+                    // Refresh list
+                    loadActivities();
                     d.dismiss();
                 });
                 dialog.setNegativeButton(Helper.getResString(R.string.common_word_cancel), null);
