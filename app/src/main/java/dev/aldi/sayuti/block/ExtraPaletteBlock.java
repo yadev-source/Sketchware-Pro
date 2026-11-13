@@ -436,34 +436,50 @@ public class ExtraPaletteBlock {
     variables(); // Memunculkan variabel bawaan Sketchware
 
     // ───── TAMBAHAN: BLOK DARI FILE JAVA ─────
-    // Ganti nama variabel agar tidak bentrok dengan 'extraBlockData' di bagian default
     ArrayList<HashMap<String, Object>> customBlockData = ExtraBlockFile.getExtraBlockData();
     List<JavaMethodExtractor.JavaFileInfo> javaClasses = JavaMethodExtractor.scanProject(sc_id);
     boolean hasCustomMethods = false;
 
     for (JavaMethodExtractor.JavaFileInfo cls : javaClasses) {
-        if (cls.voidMethods.isEmpty()) continue;
+        if (cls.methods.isEmpty()) continue;
         
         if (!hasCustomMethods) {
             logicEditor.a("Custom Java Methods", getTitleBgColor());
             hasCustomMethods = true;
         }
 
+        // Header nama file (misal: "Utils.java")
         logicEditor.a(cls.className + ".java", getTitleBgColor());
 
-        for (JavaMethodExtractor.MethodInfo m : cls.voidMethods) {
-            String opCode = "custom_call_" + cls.className + "_" + m.name;
-            String spec = "call " + cls.className + "." + m.name + "()";
-            
-            String code;
-            if (m.requiresContext) {
-                code = "new " + cls.className + "()." + m.name + "(this);";
-            } else {
-                code = "new " + cls.className + "()." + m.name + "();";
-            }
+        for (JavaMethodExtractor.MethodInfo m : cls.methods) {
+            String opCode = "custom_call_" + cls.className + "_" + m.methodName;
 
+            // 1. Buat Tampilan Blok (Spec)
+            // Jika method punya parameter, buat slot input (%s) sebanyak parameternya
+            StringBuilder specBuilder = new StringBuilder(cls.className + "." + m.methodName + "(");
+            for (int i = 0; i < m.inputCount; i++) {
+                specBuilder.append("%s");
+                if (i < m.inputCount - 1) specBuilder.append(", ");
+            }
+            specBuilder.append(")");
+            String spec = specBuilder.toString();
+
+            // 2. Buat Kode Java (Code Generator)
+            StringBuilder codeBuilder = new StringBuilder();
+            // Asumsi menggunakan instansiasi (new Class()). 
+            // Jika method static, ini tetap aman di Java (hanya warning).
+            codeBuilder.append("new ").append(cls.className).append("().").append(m.methodName).append("(");
+            
+            // Isi parameter dengan input dari user (%1$s, %2$s, dst)
+            for (int i = 0; i < m.inputCount; i++) {
+                codeBuilder.append("%").append(i + 1).append("$s");
+                if (i < m.inputCount - 1) codeBuilder.append(", ");
+            }
+            codeBuilder.append(");");
+            String code = codeBuilder.toString();
+
+            // 3. Cek apakah blok sudah terdaftar
             boolean isRegistered = false;
-            // Gunakan customBlockData di sini
             for (HashMap<String, Object> map : customBlockData) {
                 if (opCode.equals(map.get("name"))) {
                     isRegistered = true;
@@ -471,13 +487,21 @@ public class ExtraPaletteBlock {
                 }
             }
 
+            // 4. Daftarkan Blok Baru
             if (!isRegistered) {
                 HashMap<String, Object> newBlock = ExtraBlocks.createDynamicBlock(opCode, spec, code);
-                newBlock.put("palette", "0");
+                
+                // Paksa tipe blok sesuai return type (void = " ", String = "s", Boolean = "b", Number = "d")
+                newBlock.put("type", m.blockType); 
+                
+                // Masukkan ke palet Variable (ID 0)
+                newBlock.put("palette", "0"); 
+                
                 customBlockData.add(newBlock);
             }
 
-            logicEditor.a(spec, " ", opCode);
+            // 5. Tampilkan ke layar
+            logicEditor.a(spec, m.blockType, opCode);
         }
     }
     // ─────────────────────────────────────────
