@@ -120,15 +120,15 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
                 else if (oriStr.equals("sensor") || oriStr.equals("fullSensor") || oriStr.equals("user")) ori = 2;
 
                 if (ori != -1) {
-                    // KUNCI PERBAIKAN: Gunakan jC.b(sc_id).b() untuk mengambil list ProjectFileBean
+                    // Mengambil list ProjectFileBean
                     ArrayList<com.besome.sketch.beans.ProjectFileBean> fileBeans = jC.b(sc_id).b();
                     
                     if (fileBeans != null) {
                         for (com.besome.sketch.beans.ProjectFileBean bean : fileBeans) {
                             // Cocokkan nama file (contoh: "MainActivity.java")
                             if (bean.getJavaName().equals(name + ".java")) {
-                                // Set orientasi baru ke View Manager
-                                bean.setOrientation(ori); 
+                                // PERBAIKAN: Gunakan public field .orientation
+                                bean.orientation = ori; 
                                 break;
                             }
                         }
