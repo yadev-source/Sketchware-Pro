@@ -67,7 +67,7 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
     }
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         // Load ulang saat kembali dari halaman detail (agar atribut baru langsung terlihat)
         loadActivities();
