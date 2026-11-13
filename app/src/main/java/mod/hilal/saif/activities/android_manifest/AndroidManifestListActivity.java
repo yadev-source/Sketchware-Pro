@@ -36,12 +36,10 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
     private static class ActivityData {
         String name;
         String displayAttributes;
-        List<String[]> rawAttributes;
 
-        ActivityData(String name, String displayAttributes, List<String[]> rawAttributes) {
+        ActivityData(String name, String displayAttributes) {
             this.name = name;
             this.displayAttributes = displayAttributes;
-            this.rawAttributes = rawAttributes;
         }
     }
 
@@ -79,6 +77,10 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
     private void loadActivities() {
         k();
         new Thread(() -> {
+            // ───── SINKRONISASI DUA ARAH (MUTUAL OVERRIDE) ─────
+            syncFromJsonToViewManager();
+
+            // ───── BACA MANIFEST TERBARU ─────
             String source = new yq(getApplicationContext(), sc_id)
                     .getFileSrc("AndroidManifest.xml", jC.b(sc_id), jC.a(sc_id), jC.c(sc_id));
 
@@ -97,11 +99,52 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
         }).start();
     }
 
+    // Fungsi untuk memindahkan orientasi dari attributes.json ke View Manager
+    private void syncFromJsonToViewManager() {
+        String attrsPath = FileUtil.getExternalStorageDir() + "/.sketchware/data/" + sc_id + "/Injection/androidmanifest/attributes.json";
+        if (FileUtil.isExistFile(attrsPath)) {
+            ArrayList<HashMap<String, Object>> attrsData = getGson().fromJson(FileUtil.readFile(attrsPath), Helper.TYPE_MAP_LIST);
+            boolean isChanged = false;
+
+            for (int i = attrsData.size() - 1; i >= 0; i--) {
+                String name = (String) attrsData.get(i).get("name");
+                String value = (String) attrsData.get(i).get("value");
+
+                if (value != null && value.startsWith("android:screenOrientation=")) {
+                    String oriStr = value.replace("android:screenOrientation=\"", "").replace("\"", "");
+                    int ori = -1;
+                    
+                    // Konversi string ke int View Manager (0=Portrait, 1=Landscape, 2=Both)
+                    if (oriStr.equals("portrait")) ori = 0;
+                    else if (oriStr.equals("landscape")) ori = 1;
+                    else if (oriStr.equals("sensor") || oriStr.equals("fullSensor") || oriStr.equals("user")) ori = 2;
+
+                    if (ori != -1) {
+                        // Update View Manager (ProjectFileBean)
+                        for (var bean : jC.c(sc_id).getActivityFiles()) {
+                            if (bean.getJavaName().equals(name + ".java")) {
+                                bean.setOrientation(ori);
+                                break;
+                            }
+                        }
+                        // Hapus dari JSON agar tidak mengunci manifest (biarkan View Manager yang bekerja)
+                        attrsData.remove(i);
+                        isChanged = true;
+                    }
+                }
+            }
+
+            if (isChanged) {
+                FileUtil.writeFile(attrsPath, getGson().toJson(attrsData));
+            }
+        }
+    }
+
     private List<ActivityData> parseActivities(String xml) {
         List<ActivityData> result = new ArrayList<>();
         if (xml == null || xml.isEmpty()) return result;
 
-        xml = xml.replaceAll("(?s)<!--.*?-->", ""); // Hapus komentar
+        xml = xml.replaceAll("(?s)<!--.*?-->", "");
 
         int idx = 0;
         while (true) {
@@ -128,59 +171,23 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
                 }
 
                 List<String> attrKeys = new ArrayList<>();
-                List<String[]> rawAttrs = new ArrayList<>();
                 Pattern pattern = Pattern.compile("([a-zA-Z0-9_:]+)=\"([^\"]*)\"");
                 Matcher matcher = pattern.matcher(tag);
                 
                 while (matcher.find()) {
                     String key = matcher.group(1);
-                    String val = matcher.group(2);
                     if (!key.equals("android:name") && !key.equals("name")) {
                         String cleanKey = key.replace("android:", "");
                         attrKeys.add(cleanKey);
-                        rawAttrs.add(new String[]{key, val});
                     }
                 }
 
                 String displayAttrs = String.join(" | ", attrKeys);
-                result.add(new ActivityData(name, displayAttrs, rawAttrs));
+                result.add(new ActivityData(name, displayAttrs));
             }
             idx = end + 1;
         }
         return result;
-    }
-
-    // ───── PERUBAHAN UTAMA ADA DI SINI ─────
-    private void syncAttributesToJson(ActivityData data) {
-        String path = FileUtil.getExternalStorageDir().concat("/.sketchware/data/").concat(sc_id).concat("/Injection/androidmanifest/attributes.json");
-        ArrayList<HashMap<String, Object>> jsonList = new ArrayList<>();
-        
-        if (FileUtil.isExistFile(path)) {
-            jsonList = getGson().fromJson(FileUtil.readFile(path), Helper.TYPE_MAP_LIST);
-        }
-
-        // 1. Hapus semua atribut lama untuk activity ini agar tidak terjadi duplikasi
-        for (int i = jsonList.size() - 1; i >= 0; i--) {
-            if (data.name.equals(jsonList.get(i).get("name"))) {
-                jsonList.remove(i);
-            }
-        }
-
-        // 2. Masukkan kembali SEMUA atribut yang ada di manifest (termasuk dari View Manager)
-        for (String[] attr : data.rawAttributes) {
-            String key = attr[0];
-            String val = attr[1];
-            
-            // Jangan masukkan android:name karena Ix akan otomatis membuatnya
-            if (key.equals("android:name") || key.equals("name")) continue;
-            
-            HashMap<String, Object> map = new HashMap<>();
-            map.put("name", data.name);
-            map.put("value", key + "=\"" + val + "\"");
-            jsonList.add(map);
-        }
-
-        FileUtil.writeFile(path, getGson().toJson(jsonList));
     }
 
     private class ActivityListAdapter extends BaseAdapter {
@@ -205,7 +212,6 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
 
             ActivityData data = getItem(position);
             attributeView.getImageView().setVisibility(View.GONE);
-            
             attributeView.getTextView().setSingleLine(false);
 
             String title = "." + data.name;
@@ -216,7 +222,6 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
             }
 
             SpannableString spannable = new SpannableString(fullText);
-            
             if (!data.displayAttributes.isEmpty()) {
                 spannable.setSpan(new ForegroundColorSpan(Color.GRAY), 
                         title.length(), fullText.length(), 
@@ -225,10 +230,8 @@ public class AndroidManifestListActivity extends BaseAppCompatActivity {
             
             attributeView.getTextView().setText(spannable);
 
+            // Saat diklik, langsung buka Detail TANPA mengubah JSON
             attributeView.setOnClickListener(v -> {
-                // Sinkronisasi semua atribut manifest (termasuk View Manager) ke JSON
-                syncAttributesToJson(data);
-                
                 Intent intent = new Intent();
                 intent.setClass(getApplicationContext(), AndroidManifestInjectionDetails.class);
                 intent.putExtra("sc_id", sc_id);
