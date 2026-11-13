@@ -2,6 +2,9 @@ package mod.hey.studios.activity.managers.java;
 
 import android.net.Uri;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -14,25 +17,55 @@ import pro.sketchware.utility.FileUtil;
 public class JavaMethodExtractor {
 
     public static class MethodInfo {
-        public String name;
+        public String methodName;
+        public String blockType; // c (void), s (String), d (Number), b (Boolean), v (Object/View)
+        public String returnType; // void, String, int, etc.
         public boolean requiresContext;
-        public String rawParameters;
+        public String parameters;
+        public int inputCount;
+        public List<String> paramTypes; // ["Context", "String"]
 
-        public MethodInfo(String name, boolean requiresContext, String rawParameters) {
-            this.name = name;
+        public MethodInfo(String methodName, String returnType, String blockType, boolean requiresContext, String parameters) {
+            this.methodName = methodName;
+            this.returnType = returnType;
+            this.blockType = blockType;
             this.requiresContext = requiresContext;
-            this.rawParameters = rawParameters;
+            this.parameters = parameters;
+            
+            // Hitung jumlah input dan tipe parameternya
+            this.paramTypes = new ArrayList<>();
+            if (!parameters.trim().isEmpty()) {
+                String[] params = parameters.split(",");
+                this.inputCount = params.length;
+                for (String p : params) {
+                    String[] parts = p.trim().split("\\s+");
+                    if (parts.length > 0) {
+                        this.paramTypes.add(parts[0]); // Ambil tipe datanya saja (misal "Context", "String")
+                    }
+                }
+            } else {
+                this.inputCount = 0;
+            }
         }
     }
 
     public static class JavaFileInfo {
         public String className;
-        public List<MethodInfo> voidMethods;
+        public List<MethodInfo> methods;
 
-        public JavaFileInfo(String className, List<MethodInfo> voidMethods) {
+        public JavaFileInfo(String className, List<MethodInfo> methods) {
             this.className = className;
-            this.voidMethods = voidMethods;
+            this.methods = methods;
         }
+    }
+
+    /**
+     * Mengembalikan data dalam bentuk JSON String yang rapi.
+     */
+    public static String getJson(String sc_id) {
+        List<JavaFileInfo> resultList = scanProject(sc_id);
+        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+        return gson.toJson(resultList);
     }
 
     public static List<JavaFileInfo> scanProject(String sc_id) {
@@ -59,8 +92,8 @@ public class JavaMethodExtractor {
                 String content = FileUtil.readFile(file.getAbsolutePath());
                 if (content != null && !content.trim().isEmpty()) {
                     String className = file.getName().replace(".java", "");
-                    List<MethodInfo> methods = extractVoidMethods(content);
-                    
+                    List<MethodInfo> methods = extractMethods(content);
+
                     if (!methods.isEmpty()) {
                         resultList.add(new JavaFileInfo(className, methods));
                     }
@@ -69,26 +102,44 @@ public class JavaMethodExtractor {
         }
     }
 
-    private static List<MethodInfo> extractVoidMethods(String code) {
+    private static List<MethodInfo> extractMethods(String code) {
         List<MethodInfo> methodList = new ArrayList<>();
         code = code.replaceAll("//.*|/\\*(?s:.*?)\\*/", "");
 
-        // Regex hanya untuk "public void"
+        // Regex untuk menangkap public method (void & non-void)
         String regex = "public\\s+" +
                        "(?:static\\s+)?" +
-                       "void\\s+" +
-                       "([a-zA-Z_$][a-zA-Z\\d_$]*)\\s*" +
-                       "\\(([^)]*)\\)";
+                       "([a-zA-Z_$][a-zA-Z\\d_$<>\\[\\]\\.]*)\\s+" + // 1. Return Type
+                       "([a-zA-Z_$][a-zA-Z\\d_$]*)\\s*" +           // 2. Method Name
+                       "\\(([^)]*)\\)";                              // 3. Parameters
 
         Pattern pattern = Pattern.compile(regex);
         Matcher matcher = pattern.matcher(code);
 
         while (matcher.find()) {
-            String methodName = matcher.group(1);
-            String parameters = matcher.group(2).trim();
-            boolean needsContext = Pattern.compile("\\bContext\\b").matcher(parameters).find();
+            String returnType = matcher.group(1);
+            String methodName = matcher.group(2);
+            String parameters = matcher.group(3).trim();
             
-            methodList.add(new MethodInfo(methodName, needsContext, parameters));
+            boolean requiresContext = Pattern.compile("\\bContext\\b").matcher(parameters).find();
+
+            // Pemetaan Tipe Java ke Tipe Blok Sketchware
+            String blockType;
+            if (returnType.equals("void")) {
+                blockType = " "; // Command
+            } else if (returnType.equals("String")) {
+                blockType = "s";
+            } else if (returnType.equals("boolean") || returnType.equals("Boolean")) {
+                blockType = "b";
+            } else if (returnType.equals("int") || returnType.equals("double") || returnType.equals("float") || returnType.equals("long") || returnType.equals("Integer")) {
+                blockType = "d"; // Number
+            } else if (returnType.contains("List") || returnType.contains("ArrayList")) {
+                blockType = "l";
+            } else {
+                blockType = "v"; // Object/View
+            }
+
+            methodList.add(new MethodInfo(methodName, returnType, blockType, requiresContext, parameters));
         }
         return methodList;
     }
