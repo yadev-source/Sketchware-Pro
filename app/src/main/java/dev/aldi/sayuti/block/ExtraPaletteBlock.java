@@ -35,6 +35,8 @@ import pro.sketchware.utility.CustomVariableUtil;
 import pro.sketchware.utility.FileResConfig;
 import pro.sketchware.utility.FileUtil;
 import pro.sketchware.utility.SketchwareUtil;
+import java.util.List;
+import mod.hey.studios.activity.managers.java.JavaMethodExtractor;
 
 public class ExtraPaletteBlock {
 
