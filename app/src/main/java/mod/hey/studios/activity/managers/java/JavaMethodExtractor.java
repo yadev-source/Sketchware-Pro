@@ -24,6 +24,7 @@ public class JavaMethodExtractor {
         public String parameters;
         public int inputCount;
         public List<String> paramTypes; // ["Context", "String"]
+        public List<String> paramNames; // ["context", "message"] <-- TAMBAHKAN INI
 
         public MethodInfo(String methodName, String returnType, String blockType, boolean requiresContext, String parameters) {
             this.methodName = methodName;
@@ -32,15 +33,21 @@ public class JavaMethodExtractor {
             this.requiresContext = requiresContext;
             this.parameters = parameters;
             
-            // Hitung jumlah input dan tipe parameternya
+            // Hitung jumlah input, tipe parameter, dan nama parameter
             this.paramTypes = new ArrayList<>();
+            this.paramNames = new ArrayList<>();
+            
             if (!parameters.trim().isEmpty()) {
                 String[] params = parameters.split(",");
                 this.inputCount = params.length;
-                for (String p : params) {
-                    String[] parts = p.trim().split("\\s+");
-                    if (parts.length > 0) {
-                        this.paramTypes.add(parts[0]); // Ambil tipe datanya saja (misal "Context", "String")
+                for (int i = 0; i < params.length; i++) {
+                    String[] parts = params[i].trim().split("\\s+");
+                    if (parts.length >= 2) {
+                        this.paramTypes.add(parts[0]); // Tipe data (misal "Context", "String")
+                        this.paramNames.add(parts[1]); // Nama variabel (misal "context", "message")
+                    } else if (parts.length == 1) {
+                        this.paramTypes.add(parts[0]);
+                        this.paramNames.add("arg" + (i + 1)); // Fallback jika tidak ada nama
                     }
                 }
             } else {
