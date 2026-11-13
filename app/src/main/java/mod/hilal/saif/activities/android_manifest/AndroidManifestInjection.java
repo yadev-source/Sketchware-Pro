@@ -96,58 +96,58 @@ public class AndroidManifestInjection extends BaseAppCompatActivity {
     }
 
     private void setupOptions() {
-        List<LibraryCategoryView> options = new ArrayList<>();
+    List<LibraryCategoryView> options = new ArrayList<>();
 
-        LibraryCategoryView basicCategoryView = new LibraryCategoryView(this);
-        basicCategoryView.setTitle(null);
-        options.add(basicCategoryView);
+    LibraryCategoryView basicCategoryView = new LibraryCategoryView(this);
+    basicCategoryView.setTitle(null);
+    options.add(basicCategoryView);
 
-        basicCategoryView.addLibraryItem(createOption("Application", "Default properties for the app", R.drawable.ic_mtrl_settings_applications, v -> {
-            Intent intent = new Intent();
-            intent.setClass(getApplicationContext(), AndroidManifestInjectionDetails.class);
-            intent.putExtra("sc_id", sc_id);
-            intent.putExtra("file_name", currentActivityName);
-            intent.putExtra("type", "application");
-            startActivity(intent);
-        }), true);
+    basicCategoryView.addLibraryItem(createOption("Application", "Default properties for the app", R.drawable.ic_mtrl_settings_applications, v -> {
+        Intent intent = new Intent();
+        intent.setClass(getApplicationContext(), AndroidManifestInjectionDetails.class);
+        intent.putExtra("sc_id", sc_id);
+        intent.putExtra("file_name", currentActivityName);
+        intent.putExtra("type", "application");
+        startActivity(intent);
+    }), true);
 
-        basicCategoryView.addLibraryItem(createOption("Permissions", "Add custom Permissions to the app", R.drawable.ic_mtrl_shield_check, v -> {
-            Intent intent = new Intent();
-            intent.setClass(getApplicationContext(), AndroidManifestInjectionDetails.class);
-            intent.putExtra("sc_id", sc_id);
-            intent.putExtra("file_name", currentActivityName);
-            intent.putExtra("type", "permission");
-            startActivity(intent);
-        }), true);
+    basicCategoryView.addLibraryItem(createOption("Permissions", "Add custom Permissions to the app", R.drawable.ic_mtrl_shield_check, v -> {
+        Intent intent = new Intent();
+        intent.setClass(getApplicationContext(), AndroidManifestInjectionDetails.class);
+        intent.putExtra("sc_id", sc_id);
+        intent.putExtra("file_name", currentActivityName);
+        intent.putExtra("type", "permission");
+        startActivity(intent);
+    }), true);
 
-        basicCategoryView.addLibraryItem(createOption("Launcher Activities", "Change the default Launcher Activity", R.drawable.ic_mtrl_login, v -> showLauncherActDialog(AndroidManifestInjector.getLauncherActivity(sc_id))), true);
+    basicCategoryView.addLibraryItem(createOption("Launcher Activities", "Change the default Launcher Activity", R.drawable.ic_mtrl_login, v -> showLauncherActDialog(AndroidManifestInjector.getLauncherActivity(sc_id))), true);
 
-        basicCategoryView.addLibraryItem(createOption("All Activities", "Add attributes for all Activities", R.drawable.ic_mtrl_frame_source, v -> {
-            Intent intent = new Intent();
-            intent.setClass(getApplicationContext(), AndroidManifestInjectionDetails.class);
-            intent.putExtra("sc_id", sc_id);
-            intent.putExtra("file_name", currentActivityName);
-            intent.putExtra("type", "all");
-            startActivity(intent);
-        }), true);
+    basicCategoryView.addLibraryItem(createOption("All Activities", "Add attributes for all Activities", R.drawable.ic_mtrl_frame_source, v -> {
+        Intent intent = new Intent();
+        intent.setClass(getApplicationContext(), AndroidManifestInjectionDetails.class);
+        intent.putExtra("sc_id", sc_id);
+        intent.putExtra("file_name", currentActivityName);
+        intent.putExtra("type", "all");
+        startActivity(intent);
+    }), true);
 
-        // ───── NEW: List Activity ─────
-        basicCategoryView.addLibraryItem(createOption(
-                "List Activity",
-                "View and manage all activities listed in the manifest",
-                R.drawable.ic_mtrl_format_list_bulleted,
-                v -> {
-                    Intent intent = new Intent();
-                    intent.setClass(getApplicationContext(), AndroidManifestListActivity.class);
-                    intent.putExtra("sc_id", sc_id);
-                    startActivity(intent);
-                }
-        ), true);
+    // ───── List Activity → buka AndroidManifestListActivity ─────
+    basicCategoryView.addLibraryItem(createOption(
+            "List Activity",
+            "View all <activity> tags listed in AndroidManifest.xml",
+            R.drawable.ic_mtrl_format_list_bulleted,
+            v -> {
+                Intent intent = new Intent();
+                intent.setClass(getApplicationContext(), AndroidManifestListActivity.class);
+                intent.putExtra("sc_id", sc_id);
+                startActivity(intent);
+            }
+    ), true);
 
-        basicCategoryView.addLibraryItem(createOption("App Components", "Add extra components", R.drawable.ic_mtrl_component, v -> showAppComponentDialog()), false);
+    basicCategoryView.addLibraryItem(createOption("App Components", "Add extra components", R.drawable.ic_mtrl_component, v -> showAppComponentDialog()), false);
 
-        options.forEach(binding.cards::addView);
-    }
+    options.forEach(binding.cards::addView);
+}
 
     private LibraryItemView createOption(String title, String description, int icon, View.OnClickListener onClick) {
         var card = new LibraryItemView(this);
