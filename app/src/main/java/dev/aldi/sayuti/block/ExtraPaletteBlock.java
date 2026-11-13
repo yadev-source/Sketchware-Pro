@@ -38,6 +38,7 @@ import pro.sketchware.utility.SketchwareUtil;
 import java.util.List;
 import java.io.File;
 import dev.aldi.sayuti.block.ExtraBlockFile;
+import mod.hey.studios.activity.managers.java.JavaMethodExtractor;
 import mod.hey.studios.util.Helper;
 
 public class ExtraPaletteBlock {
