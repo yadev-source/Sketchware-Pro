@@ -28,24 +28,21 @@ class KotlinCompiler(
         val mKotlinHome = File(KotlinCompilerBridge.getKotlinHome(workspace)).apply { mkdirs() }
         val mClassOutput = File(workspace.compiledClassesPath).apply { mkdirs() }
 
-        // ── Classpath: log + sanitize trailing ':' ──
+        // Sanitize trailing ':' agar kotlinc tidak komplain
         val classpath = sanitizeClasspath(builder.getClasspath())
-        val cpEntryCount = if (classpath.isEmpty()) 0 else classpath.split(":").size
-        LogUtil.d(TAG, "Classpath: $cpEntryCount entries, ${classpath.length} chars")
-        for (entry in classpath.split(":")) {
-            LogUtil.d(TAG, "  cp entry: $entry")
-        }
+        LogUtil.d(TAG, "Classpath: ${classpath.length} chars, " +
+                "${if (classpath.isEmpty()) 0 else classpath.split(":").size} entries")
 
-        // ── Source files: log ──
-        val sourcePaths = filesToCompile.map { it.absolutePath }
-        LogUtil.d(TAG, "Source files (${sourcePaths.size}):")
-        sourcePaths.forEach { LogUtil.d(TAG, "  src: $it") }
+        val arguments = mutableListOf<String>().apply {
+            add("-classpath")              // ← FIX dari "-cp"
+            add(classpath)
+            addAll(filesToCompile.map { it.absolutePath })
+        }
 
         val compiler = K2JVMCompiler()
         val collector = DiagnosticCollector()
         val plugins = getCompilerPlugins(workspace).map(File::getAbsolutePath).toTypedArray()
 
-        // ── Set arguments langsung (tanpa CLI parsing) ──
         val args = K2JVMCompilerArguments().apply {
             compileJava = false
             includeRuntime = false
@@ -53,24 +50,18 @@ class KotlinCompiler(
             noReflect = true
             noStdlib = true
 
-            this.classpath = classpath          // ← pengganti "-cp <value>"
-            freeArgs = sourcePaths              // ← pengganti positional args
-
             kotlinHome = mKotlinHome.absolutePath
             destination = mClassOutput.absolutePath
             pluginClasspaths = plugins
         }
 
-        LogUtil.d(TAG, "K2JVMCompilerArguments: " +
-                "classpath=${args.classpath?.length} chars, " +
-                "freeArgs=${args.freeArgs.size}, " +
-                "destination=${args.destination}, " +
-                "kotlinHome=${args.kotlinHome}")
+        LogUtil.d(TAG, "Running kotlinc with these arguments: $arguments")
 
-        // Tidak perlu compiler.parseArguments() lagi
+        // ── KEMBALIKAN parseArguments (penting!) ──
+        compiler.parseArguments(arguments.toTypedArray(), args)
         compiler.exec(collector, Services.EMPTY, args)
 
-        LogUtil.d(TAG, "kotlinc diagnostics:\n$collector")
+        LogUtil.d(TAG, "kotlinc MessageCollector: $collector")
 
         File(mClassOutput, "META-INF").deleteRecursively()
 
@@ -82,7 +73,6 @@ class KotlinCompiler(
         }
     }
 
-    /** Kotlinc menolak classpath dengan trailing ':' di sebagian versi. */
     private fun sanitizeClasspath(cp: String?): String {
         if (cp.isNullOrEmpty()) return ""
         var end = cp.length
