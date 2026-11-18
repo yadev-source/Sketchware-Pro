@@ -451,90 +451,129 @@ public class ProjectBuilder {
      * Run Eclipse Compiler to compile Java files.
      */
     public void compileJavaCode() throws zy, IOException {
-        long savedTimeMillis = System.currentTimeMillis();
+    long savedTimeMillis = System.currentTimeMillis();
+    LogUtil.d(TAG, "════════ Starting Java compilation ════════");
 
-        class EclipseOutOutputStream extends OutputStream {
+    class EclipseOutOutputStream extends OutputStream {
+        private final StringBuffer mBuffer = new StringBuffer();
+        @Override public void write(int b) { mBuffer.append((char) b); }
+        public String getOut() { return mBuffer.toString(); }
+    }
 
-            private final StringBuffer mBuffer = new StringBuffer();
+    class EclipseErrOutputStream extends OutputStream {
+        private final StringBuffer mBuffer = new StringBuffer();
+        @Override public void write(int b) { mBuffer.append((char) b); }
+        public String getOut() { return mBuffer.toString(); }
+    }
 
-            @Override
-            public void write(int b) {
-                mBuffer.append((char) b);
-            }
+    try (EclipseOutOutputStream outOutputStream = new EclipseOutOutputStream();
+         PrintWriter outWriter = new PrintWriter(outOutputStream);
+         EclipseErrOutputStream errOutputStream = new EclipseErrOutputStream();
+         PrintWriter errWriter = new PrintWriter(errOutputStream)) {
 
-            public String getOut() {
-                return mBuffer.toString();
-            }
+        ArrayList<String> args = new ArrayList<>();
+
+        String javaVersion = "-" + build_settings.getValue(
+                BuildSettings.SETTING_JAVA_VERSION,
+                BuildSettings.SETTING_JAVA_VERSION_1_7);
+        args.add(javaVersion);
+        LogUtil.d(TAG, "Java source level: " + javaVersion);
+
+        args.add("-nowarn");
+        if (!build_settings.getValue(BuildSettings.SETTING_NO_WARNINGS,
+                BuildSettings.SETTING_GENERIC_VALUE_TRUE)
+                .equals(BuildSettings.SETTING_GENERIC_VALUE_TRUE)) {
+            args.add("-deprecation");
         }
 
-        class EclipseErrOutputStream extends OutputStream {
+        args.add("-d");
+        args.add(yq.compiledClassesPath);
+        LogUtil.d(TAG, "Output directory: " + yq.compiledClassesPath);
 
-            private final StringBuffer mBuffer = new StringBuffer();
-
-            @Override
-            public void write(int b) {
-                mBuffer.append((char) b);
-            }
-
-            public String getOut() {
-                return mBuffer.toString();
-            }
+        // ── Classpath: log detail ──
+        String classpath = getClasspath();
+        int entryCount = classpath.isEmpty() ? 0 : classpath.split(":").length;
+        LogUtil.d(TAG, "Classpath length: " + classpath.length() + " chars, "
+                + entryCount + " entries");
+        for (String entry : classpath.split(":")) {
+            LogUtil.d(TAG, "  classpath entry: " + entry);
+        }
+        if (classpath.endsWith(":")) {
+            LogUtil.w(TAG, "Classpath ends with ':' — trailing separator");
         }
 
-        try (EclipseOutOutputStream outOutputStream = new EclipseOutOutputStream();
-             PrintWriter outWriter = new PrintWriter(outOutputStream);
-             EclipseErrOutputStream errOutputStream = new EclipseErrOutputStream();
-             PrintWriter errWriter = new PrintWriter(errOutputStream)) {
+        // ── FIX: -classpath (lebih eksplisit, meski Eclipse menerima -cp juga) ──
+        args.add("-classpath");
+        args.add(classpath);
 
-            ArrayList<String> args = new ArrayList<>();
-            args.add("-" + build_settings.getValue(BuildSettings.SETTING_JAVA_VERSION,
-                    BuildSettings.SETTING_JAVA_VERSION_1_7));
-            args.add("-nowarn");
-            if (!build_settings.getValue(BuildSettings.SETTING_NO_WARNINGS,
-                    BuildSettings.SETTING_GENERIC_VALUE_TRUE).equals(BuildSettings.SETTING_GENERIC_VALUE_TRUE)) {
-                args.add("-deprecation");
-            }
-            args.add("-d");
-            args.add(yq.compiledClassesPath);
-            args.add("-cp");
-            args.add(getClasspath());
-            args.add("-proc:none");
-            args.add(yq.javaFilesPath);
-            args.add(yq.rJavaDirectoryPath);
-            String pathJava = fpu.getPathJava(yq.sc_id);
-            if (FileUtil.isExistFile(pathJava)) {
-                args.add(pathJava);
-            }
-            String pathBroadcast = fpu.getPathBroadcast(yq.sc_id);
-            if (FileUtil.isExistFile(pathBroadcast)) {
-                args.add(pathBroadcast);
-            }
-            String pathService = fpu.getPathService(yq.sc_id);
-            if (FileUtil.isExistFile(pathService)) {
-                args.add(pathService);
-            }
+        args.add("-proc:none");
 
-            /* Avoid "package ;" line in that file causing issues while compiling */
-            File rJavaFileWithoutPackage = new File(yq.rJavaDirectoryPath, "R.java");
-            if (rJavaFileWithoutPackage.exists() && !rJavaFileWithoutPackage.delete()) {
+        // ── Source paths: log tiap direktori ──
+        args.add(yq.javaFilesPath);
+        LogUtil.d(TAG, "Source path (generated): " + yq.javaFilesPath);
+
+        args.add(yq.rJavaDirectoryPath);
+        LogUtil.d(TAG, "Source path (R.java dir): " + yq.rJavaDirectoryPath);
+
+        String pathJava = fpu.getPathJava(yq.sc_id);
+        if (FileUtil.isExistFile(pathJava)) {
+            args.add(pathJava);
+            LogUtil.d(TAG, "Source path (custom java): " + pathJava);
+        }
+
+        String pathBroadcast = fpu.getPathBroadcast(yq.sc_id);
+        if (FileUtil.isExistFile(pathBroadcast)) {
+            args.add(pathBroadcast);
+            LogUtil.d(TAG, "Source path (broadcast): " + pathBroadcast);
+        }
+
+        String pathService = fpu.getPathService(yq.sc_id);
+        if (FileUtil.isExistFile(pathService)) {
+            args.add(pathService);
+            LogUtil.d(TAG, "Source path (service): " + pathService);
+        }
+
+        /* Avoid "package ;" line in that file causing issues while compiling */
+        File rJavaFileWithoutPackage = new File(yq.rJavaDirectoryPath, "R.java");
+        if (rJavaFileWithoutPackage.exists()) {
+            boolean deleted = rJavaFileWithoutPackage.delete();
+            if (deleted) {
+                LogUtil.d(TAG, "Deleted stub R.java: " + rJavaFileWithoutPackage.getAbsolutePath());
+            } else {
                 LogUtil.w(TAG, "Failed to delete file " + rJavaFileWithoutPackage.getAbsolutePath());
             }
-
-            /* Start compiling */
-            org.eclipse.jdt.internal.compiler.batch.Main main = new org.eclipse.jdt.internal.compiler.batch.Main(outWriter, errWriter, false, null, null);
-            LogUtil.d(TAG, "Running Eclipse compiler with these arguments: " + args);
-            main.compile(args.toArray(new String[0]));
-
-            LogUtil.d(TAG, "System.out of Eclipse compiler: " + outOutputStream.getOut());
-            if (main.globalErrorsCount <= 0) {
-                LogUtil.d(TAG, "System.err of Eclipse compiler: " + errOutputStream.getOut());
-                LogUtil.d(TAG, "Compiling Java files took " + (System.currentTimeMillis() - savedTimeMillis) + " ms");
-            } else {
-                LogUtil.e(TAG, "Failed to compile Java files");
-                throw new zy(errOutputStream.getOut());
-            }
         }
+
+        /* Start compiling */
+        LogUtil.d(TAG, "Running Eclipse compiler with " + args.size() + " args:");
+        LogUtil.d(TAG, "  " + args);
+
+        org.eclipse.jdt.internal.compiler.batch.Main main =
+                new org.eclipse.jdt.internal.compiler.batch.Main(outWriter, errWriter, false, null, null);
+        main.compile(args.toArray(new String[0]));
+
+        // ── Log output compiler ──
+        String stdout = outOutputStream.getOut();
+        String stderr = errOutputStream.getOut();
+        if (!stdout.isEmpty()) {
+            LogUtil.d(TAG, "Eclipse stdout:\n" + stdout);
+        }
+        if (!stderr.isEmpty()) {
+            LogUtil.d(TAG, "Eclipse stderr:\n" + stderr);
+        }
+        LogUtil.d(TAG, "Eclipse globalErrorsCount: " + main.globalErrorsCount);
+
+        if (main.globalErrorsCount <= 0) {
+            LogUtil.d(TAG, "Compiling Java files took "
+                    + (System.currentTimeMillis() - savedTimeMillis) + " ms");
+        } else {
+            LogUtil.e(TAG, "Failed to compile Java files (" + main.globalErrorsCount + " errors)");
+            throw new zy(stderr);
+        }
+    } finally {
+        LogUtil.d(TAG, "════════ Java compilation finished ════════");
     }
+}
 
     public void buildApk() throws By {
         String firstDexPath = dexesToAddButNotMerge.isEmpty() ? yq.classesDexPath : dexesToAddButNotMerge.remove(0).getAbsolutePath();
