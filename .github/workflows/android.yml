@@ -36,46 +36,22 @@ jobs:
           if [ -n "$JSON_CONTENT" ]; then
             printf '%s' "$JSON_CONTENT" > app/google-services.json
           else
-            # Dummy biar build jalan walau di fork belum set secret
-            cat > app/google-services.json <<'EOF'
-            {
-              "project_info": {
-                "project_number": "000000000000",
-                "project_id": "dummy",
-                "storage_bucket": "dummy.appspot.com"
-              },
-              "client": [
-                {
-                  "client_info": {
-                    "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
-                    "android_client_info": { "package_name": "com.besome.sketch" }
-                  },
-                  "oauth_client": [],
-                  "api_key": [{ "current_key": "dummy" }],
-                  "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
-                }
-              ],
-              "configuration_version": "1"
-            }
-            EOF
+            printf '%s' '{"project_info":{"project_number":"000000000000","project_id":"dummy","storage_bucket":"dummy.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:000000000000:android:0000000000000000","android_client_info":{"package_name":"com.besome.sketch"}},"oauth_client":[],"api_key":[{"current_key":"dummy"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > app/google-services.json
           fi
 
       - name: Build Release APK
         env:
           SKETCHUB_API_KEY: ${{ secrets.SKETCHUB_API_KEY }}
-        run: gradle assembleRelease --warning-mode all
+        run: ./gradlew assembleRelease
 
       - name: Pack APK + DEX to ZIP
         run: |
           APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          echo "APK: $APK"
           mkdir -p out
           cp "$APK" out/app-release.apk
           cd out
-          # DEX ada di dalam APK, extract aja
           unzip -o app-release.apk "*.dex"
           zip -r release.zip app-release.apk *.dex
-          ls -lh
 
       - name: Upload ZIP
         uses: actions/upload-artifact@v7
