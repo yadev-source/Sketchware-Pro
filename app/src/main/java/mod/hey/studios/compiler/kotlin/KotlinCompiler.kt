@@ -9,20 +9,11 @@ import org.jetbrains.kotlin.cli.jvm.K2JVMCompiler
 import org.jetbrains.kotlin.config.Services
 import java.io.File
 
-/**
- * Partly adapted from:
- * [https://github.com/tyron12233/CodeAssist/blob/main/build-logic/src/main/java/com/tyron/builder/compiler/incremental/kotlin/IncrementalKotlinCompiler.java]
- *
- * A huge thank you to [tyron][https://github.com/tyron12233] for porting `kotlinc` to Android.
- */
 class KotlinCompiler(
     private val builder: ProjectBuilder
 ) {
     private val workspace = builder.yq
 
-    /**
-     * Invokes `kotlinc`.
-     */
     @Throws(Throwable::class)
     fun compile() {
         val timeMillis = System.currentTimeMillis()
@@ -35,22 +26,26 @@ class KotlinCompiler(
         }
 
         val mKotlinHome = File(KotlinCompilerBridge.getKotlinHome(workspace)).apply { mkdirs() }
-        // Output in the same place as ecj, makes everything easier
         val mClassOutput = File(workspace.compiledClassesPath).apply { mkdirs() }
 
-        val arguments = mutableListOf<String>().apply {
-            // Classpath
-            add("-cp")
-            add(builder.getClasspath())
-
-            // Sources (.java & .kt)
-            addAll(filesToCompile.map { it.absolutePath })
+        // ── Classpath: log + sanitize trailing ':' ──
+        val classpath = sanitizeClasspath(builder.getClasspath())
+        val cpEntryCount = if (classpath.isEmpty()) 0 else classpath.split(":").size
+        LogUtil.d(TAG, "Classpath: $cpEntryCount entries, ${classpath.length} chars")
+        for (entry in classpath.split(":")) {
+            LogUtil.d(TAG, "  cp entry: $entry")
         }
+
+        // ── Source files: log ──
+        val sourcePaths = filesToCompile.map { it.absolutePath }
+        LogUtil.d(TAG, "Source files (${sourcePaths.size}):")
+        sourcePaths.forEach { LogUtil.d(TAG, "  src: $it") }
 
         val compiler = K2JVMCompiler()
         val collector = DiagnosticCollector()
         val plugins = getCompilerPlugins(workspace).map(File::getAbsolutePath).toTypedArray()
 
+        // ── Set arguments langsung (tanpa CLI parsing) ──
         val args = K2JVMCompilerArguments().apply {
             compileJava = false
             includeRuntime = false
@@ -58,32 +53,41 @@ class KotlinCompiler(
             noReflect = true
             noStdlib = true
 
+            this.classpath = classpath          // ← pengganti "-cp <value>"
+            freeArgs = sourcePaths              // ← pengganti positional args
+
             kotlinHome = mKotlinHome.absolutePath
             destination = mClassOutput.absolutePath
             pluginClasspaths = plugins
         }
 
-        LogUtil.d(TAG, "Running kotlinc with these arguments: $arguments")
+        LogUtil.d(TAG, "K2JVMCompilerArguments: " +
+                "classpath=${args.classpath?.length} chars, " +
+                "freeArgs=${args.freeArgs.size}, " +
+                "destination=${args.destination}, " +
+                "kotlinHome=${args.kotlinHome}")
 
-        compiler.parseArguments(arguments.toTypedArray(), args)
+        // Tidak perlu compiler.parseArguments() lagi
         compiler.exec(collector, Services.EMPTY, args)
 
-        // Log all diagnostics
-        LogUtil.d(TAG, "kotlinc MessageCollector: $collector")
+        LogUtil.d(TAG, "kotlinc diagnostics:\n$collector")
 
-        // kotlinc generates some .kotlin_module files that make D8 fail,
-        // delete them for now (?) TODO
         File(mClassOutput, "META-INF").deleteRecursively()
 
         if (collector.hasErrors()) {
             LogUtil.e(TAG, "Failed to compile Kotlin files")
             throw Exception(collector.getDiagnostics(areWarningsEnabled()))
         } else {
-            LogUtil.d(
-                TAG,
-                "Compiling Kotlin files took ${System.currentTimeMillis() - timeMillis} ms"
-            )
+            LogUtil.d(TAG, "Compiling Kotlin files took ${System.currentTimeMillis() - timeMillis} ms")
         }
+    }
+
+    /** Kotlinc menolak classpath dengan trailing ':' di sebagian versi. */
+    private fun sanitizeClasspath(cp: String?): String {
+        if (cp.isNullOrEmpty()) return ""
+        var end = cp.length
+        while (end > 0 && cp[end - 1] == ':') end--
+        return cp.substring(0, end)
     }
 
     private fun areWarningsEnabled(): Boolean {
