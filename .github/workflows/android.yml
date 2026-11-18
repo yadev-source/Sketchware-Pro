@@ -59,7 +59,7 @@ jobs:
       - name: Build Release APK
         env:
           SKETCHUB_API_KEY: ${{ secrets.SKETCHUB_API_KEY }}
-        run: gradle assembleRelease
+        run: gradle assembleDebug
 
       - name: Set short SHA
         id: set_sha
@@ -71,10 +71,10 @@ jobs:
              app/build/outputs/apk/release/app-release-${{ steps.set_sha.outputs.short_sha }}.apk
 
       - name: Upload Release APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: apk-release-${{ steps.set_sha.outputs.short_sha }}
-          path: app/build/outputs/apk/release/app-release-${{ steps.set_sha.outputs.short_sha }}.apk
+  uses: actions/upload-artifact@v7
+  with:
+    name: apk-debug-${{ steps.set_sha.outputs.short_sha }}
+    path: app/build/outputs/apk/debug/app-debug.apk
 
   aggregateAndSend:
     if: ${{ !startsWith(github.ref, 'refs/heads/wip/') }}
