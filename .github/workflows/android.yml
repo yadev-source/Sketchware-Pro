@@ -3,14 +3,11 @@ name: Android CI
 on:
   push:
     paths:
-      - '.github/workflows/android.yml'
       - 'app/**'
       - 'gradle/**'
       - 'build.gradle'
       - 'gradle.properties'
       - 'gradlew'
-      - 'gradlew.bat'
-      - 'public-stable-ids.txt'
       - 'settings.gradle'
   workflow_dispatch:
 
@@ -29,27 +26,59 @@ jobs:
           java-version: 17
           distribution: temurin
 
-      - name: Set up Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
+
+      - name: Write google-services.json
+        env:
+          JSON_CONTENT: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$JSON_CONTENT" ]; then
+            printf '%s' "$JSON_CONTENT" > app/google-services.json
+          else
+            # Dummy biar build jalan walau di fork belum set secret
+            cat > app/google-services.json <<'EOF'
+            {
+              "project_info": {
+                "project_number": "000000000000",
+                "project_id": "dummy",
+                "storage_bucket": "dummy.appspot.com"
+              },
+              "client": [
+                {
+                  "client_info": {
+                    "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+                    "android_client_info": { "package_name": "com.besome.sketch" }
+                  },
+                  "oauth_client": [],
+                  "api_key": [{ "current_key": "dummy" }],
+                  "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+                }
+              ],
+              "configuration_version": "1"
+            }
+            EOF
+          fi
 
       - name: Build Release APK
         env:
           SKETCHUB_API_KEY: ${{ secrets.SKETCHUB_API_KEY }}
-          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
-        run: gradle assembleRelease
+        run: gradle assembleRelease --warning-mode all
 
       - name: Pack APK + DEX to ZIP
         run: |
           APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          mkdir -p out/dex
-          # Extract semua .dex dari dalam APK
-          unzip -j "$APK" "*.dex" -d out/dex
+          echo "APK: $APK"
+          mkdir -p out
           cp "$APK" out/app-release.apk
-          cd out && zip -r ../app-release-${GITHUB_SHA::7}.zip app-release.apk dex/
-          cd ..
+          cd out
+          # DEX ada di dalam APK, extract aja
+          unzip -o app-release.apk "*.dex"
+          zip -r release.zip app-release.apk *.dex
+          ls -lh
 
       - name: Upload ZIP
         uses: actions/upload-artifact@v7
         with:
-          name: app-release-${{ github.sha }}
-          path: app-release-*.zip
+          name: release-${{ github.sha }}
+          path: out/release.zip
