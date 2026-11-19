@@ -533,6 +533,15 @@ public class ProjectBuilder {
             LogUtil.d(TAG, "Source path (service): " + pathService);
         }
 
+
+        // ── Source path (src_main/java inject) ──
+File srcMainJavaDir = SrcMainJava.getInjectJavaDir(yq.sc_id);
+if (srcMainJavaDir.exists()) {
+    args.add(srcMainJavaDir.getAbsolutePath());
+    LogUtil.d(TAG, "Source path (src_main inject): " + srcMainJavaDir.getAbsolutePath());
+}
+
+
         /* Avoid "package ;" line in that file causing issues while compiling */
         File rJavaFileWithoutPackage = new File(yq.rJavaDirectoryPath, "R.java");
         if (rJavaFileWithoutPackage.exists()) {
